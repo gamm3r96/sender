@@ -1,0 +1,6 @@
+{
+  "name": "CipherQR",
+  "description": "Send and receive files securely between team members using end-to-end encryption through QR codes and local P2P.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
