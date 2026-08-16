@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,12 +64,14 @@ import com.example.data.TransferRecord
 import com.example.ui.components.AnimatedPulseBadge
 import com.example.ui.components.CyberSecurityBadge
 import com.example.ui.components.GlowingSecurityCard
+import com.example.ui.components.ThemeToggleSegmentedControl
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
 import com.example.ui.theme.CyberEmerald
 import com.example.ui.theme.CyberEmeraldBright
 import com.example.ui.theme.CyberViolet
 import com.example.ui.theme.CyberVioletBright
+import com.example.ui.theme.ThemeMode
 import com.example.util.FileUtils
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -77,6 +81,8 @@ import java.util.Locale
 fun DashboardScreen(
     transfers: List<TransferRecord>,
     activeTeamName: String?,
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    onSelectThemeMode: (ThemeMode) -> Unit = {},
     onNavigateToSend: () -> Unit,
     onNavigateToReceive: () -> Unit,
     onNavigateToVault: () -> Unit,
@@ -310,6 +316,44 @@ fun DashboardScreen(
             }
         }
 
+        // Theme & Visual Mode Switcher Card
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dashboard_theme_card")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Theme Appearance",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Switch between light and dark cyber mode",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    ThemeToggleSegmentedControl(
+                        selectedMode = themeMode,
+                        onSelectMode = onSelectThemeMode
+                    )
+                }
+            }
+        }
+
         // Recent Transfers Header
         item {
             Row(
@@ -386,6 +430,79 @@ fun DashboardScreen(
                     onToggleFavorite = { onToggleFavorite(record) },
                     onShare = { FileUtils.shareText(context, record.decryptedTextPreview ?: record.fileName, record.fileName) }
                 )
+            }
+        }
+
+        // Developer Attribution Footer
+        item {
+            Card(
+                onClick = {
+                    try {
+                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://elvis-gatwara.vercel.app"))
+                        context.startActivity(browserIntent)
+                    } catch (_: Exception) {}
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .testTag("developer_portfolio_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    CyberCyan.copy(alpha = 0.25f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(CyberCyan.copy(alpha = 0.15f))
+                                .border(1.dp, CyberCyan.copy(alpha = 0.4f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = null,
+                                tint = CyberCyanBright,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                text = "Engineered by Elvis Gatwara",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "elvis-gatwara.vercel.app",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = CyberCyanBright
+                            )
+                        }
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Visit Portfolio",
+                        tint = CyberCyan.copy(alpha = 0.8f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

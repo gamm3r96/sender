@@ -22,7 +22,9 @@ import com.example.p2p.LocalTransferClient
 import com.example.p2p.LocalTransferServer
 import com.example.p2p.NetworkUtils
 import com.example.qr.QrBitmapDecoder
+import com.example.ui.theme.ThemeMode
 import com.example.util.FileUtils
+import com.example.util.HapticFeedbackHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -39,6 +41,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+
+data class PendingDecryptionState(
+    val progress: QrChunkProgress,
+    val assembledEnvelope: ByteArray
+)
+
+data class StreamTimeoutNotice(
+    val fileName: String,
+    val receivedCount: Int,
+    val totalChunks: Int,
+    val timeoutSeconds: Int,
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 data class SendPreparationState(
     val fileName: String,
@@ -105,6 +120,14 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     private val _isDownloadingP2P = MutableStateFlow(false)
     val isDownloadingP2P: StateFlow<Boolean> = _isDownloadingP2P.asStateFlow()
 
+    // Pending manual passphrase decryption modal
+    private val _pendingDecryption = MutableStateFlow<PendingDecryptionState?>(null)
+    val pendingDecryption: StateFlow<PendingDecryptionState?> = _pendingDecryption.asStateFlow()
+
+    // Real-time frame capture pulse event (chunk index)
+    private val _frameCaptureEvent = MutableSharedFlow<Int>()
+    val frameCaptureEvent: SharedFlow<Int> = _frameCaptureEvent.asSharedFlow()
+
     // Active record for inspection / viewer
     private val _inspectedRecord = MutableStateFlow<TransferRecord?>(null)
     val inspectedRecord: StateFlow<TransferRecord?> = _inspectedRecord.asStateFlow()
@@ -112,6 +135,46 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     // Notification toast events
     private val _toastEvent = MutableSharedFlow<String>()
     val toastEvent: SharedFlow<String> = _toastEvent.asSharedFlow()
+
+    // QR Stream Inactivity Timeout Mechanism & Event State
+    private val _streamTimeoutEvent = MutableSharedFlow<StreamTimeoutNotice>()
+    val streamTimeoutEvent: SharedFlow<StreamTimeoutNotice> = _streamTimeoutEvent.asSharedFlow()
+
+    private val _lastTimeoutNotice = MutableStateFlow<StreamTimeoutNotice?>(null)
+    val lastTimeoutNotice: StateFlow<StreamTimeoutNotice?> = _lastTimeoutNotice.asStateFlow()
+
+    private val _streamTimeoutSeconds = MutableStateFlow(
+        application.getSharedPreferences("cipher_theme_prefs", Context.MODE_PRIVATE)
+            .getInt("stream_timeout_sec", 15)
+    )
+    val streamTimeoutSeconds: StateFlow<Int> = _streamTimeoutSeconds.asStateFlow()
+
+    private val _streamRemainingSeconds = MutableStateFlow<Int?>(null)
+    val streamRemainingSeconds: StateFlow<Int?> = _streamRemainingSeconds.asStateFlow()
+
+    private var streamTimeoutJob: Job? = null
+
+    // Application Theme Mode Preference
+    private val sharedPreferences = application.getSharedPreferences("cipher_theme_prefs", Context.MODE_PRIVATE)
+    private val _themeMode = MutableStateFlow(
+        try {
+            ThemeMode.valueOf(
+                sharedPreferences.getString("app_theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
+            )
+        } catch (_: Exception) {
+            ThemeMode.SYSTEM
+        }
+    )
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        sharedPreferences.edit().putString("app_theme_mode", mode.name).apply()
+    }
+
+    fun cycleThemeMode() {
+        setThemeMode(_themeMode.value.next())
+    }
 
     init {
         viewModelScope.launch {
@@ -328,6 +391,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             val p2pTicket = CryptoManager.parseP2PTicketQr(rawText)
             if (p2pTicket != null) {
                 _scannedP2PTicket.value = p2pTicket
+                HapticFeedbackHelper.vibrateFrameDetected(context)
                 _toastEvent.emit("P2P File Transfer Detected: ${p2pTicket.fileName}")
                 return@launch
             }
@@ -342,6 +406,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             // Case 3: Raw team key or secret payload
             if (rawText.startsWith("CIPHER_KEY:")) {
                 importTeamKeyFromQr(rawText)
+                HapticFeedbackHelper.vibrateStreamCompleted(context)
                 return@launch
             }
 
@@ -358,26 +423,146 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 mimeType = chunk.mimeType,
                 originalSize = chunk.originalSize,
                 originalSha256 = chunk.originalSha256,
-                totalChunks = chunk.total
+                totalChunks = chunk.total,
+                firstChunkTimestamp = System.currentTimeMillis()
             )
         }
 
-        val decodedChunkBytes = android.util.Base64.decode(chunk.payloadBase64, android.util.Base64.DEFAULT)
-        val computedChunkSha = CryptoManager.computeSha256(decodedChunkBytes)
-        if (computedChunkSha != chunk.chunkSha256) {
-            _toastEvent.emit("Corrupted QR chunk received (Checksum mismatch)")
+        val decodedChunkBytes = try {
+            android.util.Base64.decode(chunk.payloadBase64, android.util.Base64.DEFAULT)
+        } catch (_: Exception) {
+            _scanProgress.value = currentProg.copy(
+                corruptedCount = currentProg.corruptedCount + 1,
+                validationMessage = "Corrupted Base64 encoding in Chunk #${chunk.index + 1}"
+            )
+            HapticFeedbackHelper.vibrateCorruptedChunk(context)
             return
         }
 
-        currentProg.receivedChunks[chunk.index] = decodedChunkBytes
-        _scanProgress.value = currentProg.copy(receivedChunks = HashMap(currentProg.receivedChunks))
-
-        if (currentProg.isComplete) {
-            val assembledEnvelope = CryptoManager.assembleChunks(currentProg.receivedChunks, currentProg.totalChunks)
-            if (assembledEnvelope != null) {
-                completeQrStreamTransfer(currentProg, assembledEnvelope, context)
-            }
+        val computedChunkSha = CryptoManager.computeSha256(decodedChunkBytes)
+        if (computedChunkSha != chunk.chunkSha256) {
+            _scanProgress.value = currentProg.copy(
+                corruptedCount = currentProg.corruptedCount + 1,
+                validationMessage = "Checksum mismatch on Chunk #${chunk.index + 1}"
+            )
+            HapticFeedbackHelper.vibrateCorruptedChunk(context)
+            _toastEvent.emit("Corrupted QR chunk #${chunk.index + 1} (SHA-256 mismatch)")
+            return
         }
+
+        val isDuplicate = currentProg.receivedChunks.containsKey(chunk.index)
+        currentProg.receivedChunks[chunk.index] = decodedChunkBytes
+
+        val now = System.currentTimeMillis()
+        val timeDeltaMs = (now - currentProg.lastReceivedTimestamp).coerceAtLeast(1L)
+        val instantSpeed = if (timeDeltaMs in 10..5000 && !isDuplicate) {
+            (decodedChunkBytes.size * 1000f) / timeDeltaMs
+        } else {
+            currentProg.instantaneousSpeedBytesPerSec
+        }
+        val prevSmoothed = currentProg.smoothedSpeedBytesPerSec
+        val newSmoothed = if (prevSmoothed <= 0f) {
+            instantSpeed
+        } else if (instantSpeed > 0f) {
+            prevSmoothed * 0.65f + instantSpeed * 0.35f
+        } else {
+            prevSmoothed
+        }
+
+        val updatedProg = currentProg.copy(
+            receivedChunks = HashMap(currentProg.receivedChunks),
+            lastReceivedIndex = chunk.index,
+            lastReceivedTimestamp = now,
+            duplicateCount = if (isDuplicate) currentProg.duplicateCount + 1 else currentProg.duplicateCount,
+            instantaneousSpeedBytesPerSec = instantSpeed,
+            smoothedSpeedBytesPerSec = newSmoothed,
+            validationMessage = if (isDuplicate) {
+                "Frame #${chunk.index + 1}/${chunk.total} (Already in buffer)"
+            } else {
+                "Chunk #${chunk.index + 1}/${chunk.total} Validated ✓ [${computedChunkSha.take(8)}]"
+            }
+        )
+
+        _scanProgress.value = updatedProg
+        _frameCaptureEvent.emit(chunk.index)
+
+        // Provide tactile confirmation on every newly validated frame chunk
+        if (!isDuplicate) {
+            HapticFeedbackHelper.vibrateFrameDetected(context)
+        }
+
+        if (updatedProg.isComplete) {
+            cancelStreamTimeoutTimer()
+            // Trigger celebratory completion haptic pattern
+            HapticFeedbackHelper.vibrateStreamCompleted(context)
+            val assembledEnvelope = CryptoManager.assembleChunks(updatedProg.receivedChunks, updatedProg.totalChunks)
+            if (assembledEnvelope != null) {
+                completeQrStreamTransfer(updatedProg, assembledEnvelope, context)
+            }
+        } else {
+            // Multi-part stream still in progress: restart the inactivity timeout timer
+            restartStreamTimeoutTimer(
+                context = context,
+                fileName = updatedProg.fileName,
+                receivedCount = updatedProg.receivedCount,
+                totalChunks = updatedProg.totalChunks
+            )
+        }
+    }
+
+    private fun restartStreamTimeoutTimer(
+        context: Context,
+        fileName: String,
+        receivedCount: Int,
+        totalChunks: Int
+    ) {
+        streamTimeoutJob?.cancel()
+        val timeoutSec = _streamTimeoutSeconds.value
+        if (timeoutSec <= 0) {
+            _streamRemainingSeconds.value = null
+            return
+        }
+
+        _streamRemainingSeconds.value = timeoutSec
+
+        streamTimeoutJob = viewModelScope.launch {
+            for (sec in timeoutSec downTo 1) {
+                _streamRemainingSeconds.value = sec
+                delay(1000L)
+            }
+            _streamRemainingSeconds.value = 0
+
+            // Stream timed out: Reset scanner and alert user
+            val notice = StreamTimeoutNotice(
+                fileName = fileName,
+                receivedCount = receivedCount,
+                totalChunks = totalChunks,
+                timeoutSeconds = timeoutSec
+            )
+            _lastTimeoutNotice.value = notice
+            _scanProgress.value = null
+            _streamRemainingSeconds.value = null
+
+            HapticFeedbackHelper.vibrateTimeoutAlert(context)
+            _toastEvent.emit("QR Stream Timed Out (${timeoutSec}s): Stream reset ($receivedCount/$totalChunks chunks received).")
+            _streamTimeoutEvent.emit(notice)
+        }
+    }
+
+    private fun cancelStreamTimeoutTimer() {
+        streamTimeoutJob?.cancel()
+        streamTimeoutJob = null
+        _streamRemainingSeconds.value = null
+    }
+
+    fun setStreamTimeoutSeconds(seconds: Int) {
+        val clamped = seconds.coerceIn(5, 120)
+        _streamTimeoutSeconds.value = clamped
+        sharedPreferences.edit().putInt("stream_timeout_sec", clamped).apply()
+    }
+
+    fun dismissTimeoutNotice() {
+        _lastTimeoutNotice.value = null
     }
 
     private suspend fun completeQrStreamTransfer(
@@ -386,11 +571,19 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         context: Context
     ) {
         withContext(Dispatchers.IO) {
-            // Try decrypting with active team key or other team keys
+            // Try decrypting with active team key or all available team keys
             val keyList = mutableListOf<String>()
             _activeTeamKey.value?.let { keyList.add(it.passphraseOrKey) }
             val allKeys = teamKeyRepository.getDefaultTeamKey()
             allKeys?.let { if (!keyList.contains(it.passphraseOrKey)) keyList.add(it.passphraseOrKey) }
+
+            // Add all other team keys
+            val allTeamKeys = teamKeys.value
+            for (tk in allTeamKeys) {
+                if (!keyList.contains(tk.passphraseOrKey)) {
+                    keyList.add(tk.passphraseOrKey)
+                }
+            }
 
             var decryptedBytes: ByteArray? = null
             var matchedKey: String? = null
@@ -406,7 +599,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             if (decryptedBytes != null) {
                 val computedOriginalSha = CryptoManager.computeSha256(decryptedBytes)
                 if (computedOriginalSha != progress.originalSha256) {
-                    _toastEvent.emit("Warning: Decrypted data hash mismatch!")
+                    _toastEvent.emit("Warning: Decrypted data SHA-256 mismatch!")
                 }
 
                 val savedFile = FileUtils.saveBytesToInternalStorage(context, progress.fileName, decryptedBytes)
@@ -434,11 +627,61 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 val savedRecord = record.copy(id = id)
                 _inspectedRecord.value = savedRecord
                 _scanProgress.value = null
-                _toastEvent.emit("Successfully decrypted & saved ${progress.fileName}!")
+                _pendingDecryption.value = null
+                _toastEvent.emit("Successfully assembled & decrypted ${progress.fileName}!")
             } else {
-                _toastEvent.emit("Chunks received! Please verify Team Passphrase to decrypt.")
+                // Prompt user for custom passphrase
+                _pendingDecryption.value = PendingDecryptionState(progress, assembledEnvelope)
+                _toastEvent.emit("All ${progress.totalChunks} chunks assembled! Enter passphrase to decrypt.")
             }
         }
+    }
+
+    fun decryptPendingWithPassphrase(passphrase: String, context: Context) {
+        val pending = _pendingDecryption.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val decryptedBytes = CryptoManager.decryptData(pending.assembledEnvelope, passphrase.trim())
+                val computedOriginalSha = CryptoManager.computeSha256(decryptedBytes)
+                if (computedOriginalSha != pending.progress.originalSha256) {
+                    _toastEvent.emit("Warning: Decrypted data SHA-256 mismatch!")
+                }
+
+                val savedFile = FileUtils.saveBytesToInternalStorage(context, pending.progress.fileName, decryptedBytes)
+                val safetyNum = CryptoManager.generateSafetyNumber(pending.progress.originalSha256, passphrase.trim())
+                val textPreview = if (pending.progress.mimeType.startsWith("text/")) String(decryptedBytes, Charsets.UTF_8).take(200) else null
+
+                val record = TransferRecord(
+                    transferId = pending.progress.transferId,
+                    fileName = pending.progress.fileName,
+                    mimeType = pending.progress.mimeType,
+                    originalSize = pending.progress.originalSize,
+                    encryptedSize = pending.assembledEnvelope.size.toLong(),
+                    isReceived = true,
+                    transferMode = TransferMode.QR_STREAM,
+                    teamMemberName = "Ad-hoc Peer",
+                    teamName = "Custom Passphrase",
+                    status = TransferStatus.COMPLETED,
+                    sha256Checksum = pending.progress.originalSha256,
+                    safetyNumber = safetyNum,
+                    localFilePath = savedFile.absolutePath,
+                    decryptedTextPreview = textPreview
+                )
+
+                val id = transferRepository.insert(record)
+                val savedRecord = record.copy(id = id)
+                _inspectedRecord.value = savedRecord
+                _scanProgress.value = null
+                _pendingDecryption.value = null
+                _toastEvent.emit("Decryption successful: ${pending.progress.fileName}")
+            } catch (e: Exception) {
+                _toastEvent.emit("Decryption failed: Invalid passphrase or corrupted key.")
+            }
+        }
+    }
+
+    fun dismissPendingDecryption() {
+        _pendingDecryption.value = null
     }
 
     fun downloadAndDecryptP2PTicket(ticket: P2PTransferTicket, context: Context) {
@@ -502,6 +745,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun resetScanProgress() {
+        cancelStreamTimeoutTimer()
         _scanProgress.value = null
     }
 

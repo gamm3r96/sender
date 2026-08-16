@@ -67,4 +67,46 @@ class ExampleUnitTest {
         assertEquals(6, blocks.size)
         blocks.forEach { assertEquals(5, it.length) }
     }
+
+    @Test
+    fun test_stream_timeout_notice_creation() {
+        val notice = com.example.viewmodel.StreamTimeoutNotice(
+            fileName = "archive.zip",
+            receivedCount = 8,
+            totalChunks = 15,
+            timeoutSeconds = 15
+        )
+        assertEquals("archive.zip", notice.fileName)
+        assertEquals(8, notice.receivedCount)
+        assertEquals(15, notice.totalChunks)
+        assertEquals(15, notice.timeoutSeconds)
+    }
+
+    @Test
+    fun test_qr_chunk_progress_transfer_speed_and_formatting() {
+        val now = System.currentTimeMillis()
+        val chunkData1 = ByteArray(1024) { 0x41 }
+        val chunkData2 = ByteArray(1024) { 0x42 }
+
+        val progress = com.example.crypto.QrChunkProgress(
+            transferId = "tid_test_99",
+            fileName = "payload.bin",
+            mimeType = "application/octet-stream",
+            originalSize = 4096,
+            originalSha256 = "abc",
+            totalChunks = 4,
+            receivedChunks = mutableMapOf(0 to chunkData1, 1 to chunkData2),
+            firstChunkTimestamp = now - 1000L, // 1 second elapsed
+            lastReceivedIndex = 1,
+            lastReceivedTimestamp = now,
+            corruptedCount = 0,
+            duplicateCount = 0
+        )
+
+        assertEquals(2, progress.receivedCount)
+        assertEquals(2048L, progress.assembledBytes)
+        assertTrue(progress.estimatedSpeedBytesPerSec > 1500f)
+        assertTrue(progress.formattedTransferSpeed.contains("KB/s") || progress.formattedTransferSpeed.contains("B/s"))
+        assertEquals(100, progress.transferEfficiencyScore)
+    }
 }

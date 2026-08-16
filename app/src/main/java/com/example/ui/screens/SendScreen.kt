@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
@@ -379,51 +381,161 @@ fun SendScreen(
             }
 
             if (selectedTab == 0) {
-                // File Picker Upload Zone
+                // File Picker Upload & Category Selection Section
                 item {
-                    Card(
-                        onClick = { filePickerLauncher.launch("*/*") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .testTag("file_picker_dropzone"),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                        border = androidx.compose.foundation.BorderStroke(2.dp, CyberEmerald.copy(alpha = 0.5f))
-                    ) {
-                        Column(
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // Main Interactive File Dropzone Card
+                        Card(
+                            onClick = { filePickerLauncher.launch("*/*") },
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                                .fillMaxWidth()
+                                .height(210.dp)
+                                .testTag("file_picker_dropzone"),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(2.dp, CyberEmerald.copy(alpha = 0.6f))
                         ) {
-                            Box(
+                            Column(
                                 modifier = Modifier
-                                    .size(54.dp)
-                                    .clip(CircleShape)
-                                    .background(CyberEmerald.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxSize()
+                                    .padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(CircleShape)
+                                        .background(CyberEmerald.copy(alpha = 0.2f))
+                                        .border(1.5.dp, CyberEmeraldBright.copy(alpha = 0.6f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudUpload,
+                                        contentDescription = "Upload",
+                                        tint = CyberEmeraldBright,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "Select File from Local Storage",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Tap to open device file browser for instant AES-256 encryption",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = { filePickerLauncher.launch("*/*") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberEmerald),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                    modifier = Modifier.testTag("browse_local_storage_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FileOpen,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = Color.Black
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Browse Storage",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = Color.Black
+                                    )
+                                }
+                            }
+                        }
+
+                        // Quick Filter Shortcuts for Specific File Categories
+                        Text(
+                            text = "Or filter by category:",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(bottom = 4.dp)
+                        ) {
+                            val categories = listOf(
+                                Triple("All Files", "*/*", Icons.Default.FileOpen),
+                                Triple("PDF & Docs", "application/pdf", Icons.Default.TextSnippet),
+                                Triple("Photos & Images", "image/*", Icons.Default.QrCode),
+                                Triple("Text & Code", "text/*", Icons.Default.TextSnippet),
+                                Triple("Archives (.zip)", "application/zip", Icons.Default.Folder)
+                            )
+                            items(categories.size) { idx ->
+                                val (label, mime, icon) = categories[idx]
+                                Surface(
+                                    onClick = { filePickerLauncher.launch(mime) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    modifier = Modifier.testTag("filter_btn_${label.replace(" ", "_").lowercase()}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = null,
+                                            tint = CyberCyanBright,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Security and QR Streaming Technical Summary Pill
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.CloudUpload,
-                                    contentDescription = "Upload",
+                                    imageVector = Icons.Default.Security,
+                                    contentDescription = null,
                                     tint = CyberEmeraldBright,
-                                    modifier = Modifier.size(30.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Client-Side Cryptographic Pipeline",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Selected files are encrypted with authenticated AES-256-GCM and sliced into animated QR streams for optical air-gapped reception.",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Select File to Encrypt",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "PDFs, Documents, Archives, Photos, or Binaries",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
