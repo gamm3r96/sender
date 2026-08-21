@@ -1,0 +1,134 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: false
+        default: 'v1.0.0'
+      create_github_release:
+        description: 'Publish as GitHub Release'
+        type: boolean
+        default: true
+      is_draft:
+        description: 'Is Draft Release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Prepare Secrets Configuration
+        run: |
+          if [ ! -f .env ]; then
+            touch .env
+            echo "# Auto-generated build env" >> .env
+          fi
+
+      - name: Setup Signing Keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
+            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> $GITHUB_ENV
+            echo "STORE_PASSWORD=${{ secrets.STORE_PASSWORD }}" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+          elif [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > my-upload-key.jks || cp debug.keystore.base64 my-upload-key.jks
+            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> $GITHUB_ENV
+            echo "STORE_PASSWORD=android" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+          else
+            keytool -genkey -v -keystore my-upload-key.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android -dname "CN=CipherQR, OU=Mobile, O=CipherQR, L=Unknown, S=Unknown, C=US"
+            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> $GITHUB_ENV
+            echo "STORE_PASSWORD=android" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+          fi
+
+      - name: Make Gradlew Executable
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+          fi
+
+      - name: Build Release APK
+        run: |
+          if [ -f gradlew ]; then
+            ./gradlew assembleRelease --stacktrace
+          else
+            gradle assembleRelease --stacktrace
+          fi
+
+      - name: Locate and Rename APK
+        id: prepare_apk
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          if [ -z "$TAG_NAME" ] || [[ "$TAG_NAME" == *"merge"* ]] || [[ "$TAG_NAME" == "main" ]] || [[ "$TAG_NAME" == "master" ]]; then
+            TAG_NAME="${{ github.event.inputs.version_tag }}"
+            if [ -z "$TAG_NAME" ]; then
+              TAG_NAME="v1.0.0"
+            fi
+          fi
+          
+          APK_FILE=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "Error: APK not found!"
+            exit 1
+          fi
+          
+          FINAL_APK_NAME="CipherQR-${TAG_NAME}.apk"
+          cp "$APK_FILE" "$FINAL_APK_NAME"
+          sha256sum "$FINAL_APK_NAME" > "${FINAL_APK_NAME}.sha256"
+          
+          echo "apk_path=$FINAL_APK_NAME" >> $GITHUB_OUTPUT
+          echo "checksum_path=${FINAL_APK_NAME}.sha256" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CipherQR-Android-APK
+          path: |
+            ${{ steps.prepare_apk.outputs.apk_path }}
+            ${{ steps.prepare_apk.outputs.checksum_path }}
+
+      - name: Create or Update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.event.inputs.create_github_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prepare_apk.outputs.tag_name }}
+          name: "CipherQR Release ${{ steps.prepare_apk.outputs.tag_name }}"
+          draft: ${{ github.event.inputs.is_draft || false }}
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            ${{ steps.prepare_apk.outputs.apk_path }}
+            ${{ steps.prepare_apk.outputs.checksum_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -299,6 +299,23 @@ git remote add origin https://github.com/gamm3r96/sender.git
 git push -u origin main
 ```
 
+### 🏷️ Publishing an APK Release on GitHub
+
+An automated GitHub Actions workflow (`.github/workflows/release.yml`) is configured to build and publish the APK asset automatically:
+
+```bash
+# 1. Create a version tag
+git tag -a v1.0.0 -m "Release v1.0.0: Air-Gapped Optical & P2P Encrypted Suite"
+
+# 2. Push the tag to GitHub
+git push origin v1.0.0
+```
+
+**Automated Pipeline Output:**
+- Automatically compiles the optimized release APK (`CipherQR-v1.0.0.apk`).
+- Generates a SHA-256 cryptographic verification checksum (`CipherQR-v1.0.0.apk.sha256`).
+- Creates a new GitHub Release with release notes and attaches the installable APK file directly.
+
 ---
 
 ## 👨‍💻 Author & Contact
