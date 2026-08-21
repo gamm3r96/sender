@@ -33,6 +33,8 @@ import com.example.p2p.NetworkUtils
 import com.example.qr.QrBitmapDecoder
 import com.example.qr.QrCodeGenerator
 import com.example.ui.theme.ThemeMode
+import com.example.util.BatteryInfo
+import com.example.util.BatteryMonitor
 import com.example.util.FileUtils
 import com.example.util.HapticFeedbackHelper
 import kotlinx.coroutines.Dispatchers
@@ -126,6 +128,10 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     val p2pServerStatus = p2pServer.serverState
     val p2pServerProgress = p2pServer.transferProgress
     val p2pServerSpeed = p2pServer.transferSpeedBytesPerSec
+    val p2pServerCurrentChunk = p2pServer.currentChunkIndex
+    val p2pServerTotalChunks = p2pServer.totalChunks
+    val p2pServerBytesTransferred = p2pServer.bytesTransferred
+    val p2pServerTotalBytes = p2pServer.totalBytesToTransfer
 
     // Network & Wi-Fi / Hotspot State
     private val _networkInfo = MutableStateFlow(NetworkUtils.getNetworkInfo(application))
@@ -141,6 +147,11 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     val receiverServer = LocalTransferServer()
     val receiverServerStatus = receiverServer.serverState
     val receiverServerProgress = receiverServer.transferProgress
+    val receiverServerSpeed = receiverServer.transferSpeedBytesPerSec
+    val receiverServerCurrentChunk = receiverServer.currentChunkIndex
+    val receiverServerTotalChunks = receiverServer.totalChunks
+    val receiverServerBytesTransferred = receiverServer.bytesTransferred
+    val receiverServerTotalBytes = receiverServer.totalBytesToTransfer
 
     // Receive Scanner State
     private val _scanProgress = MutableStateFlow<QrChunkProgress?>(null)
@@ -154,6 +165,18 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _p2pDownloadSpeed = MutableStateFlow<Long>(0L)
     val p2pDownloadSpeed: StateFlow<Long> = _p2pDownloadSpeed.asStateFlow()
+
+    private val _p2pDownloadCurrentChunk = MutableStateFlow<Int>(0)
+    val p2pDownloadCurrentChunk: StateFlow<Int> = _p2pDownloadCurrentChunk.asStateFlow()
+
+    private val _p2pDownloadTotalChunks = MutableStateFlow<Int>(1)
+    val p2pDownloadTotalChunks: StateFlow<Int> = _p2pDownloadTotalChunks.asStateFlow()
+
+    private val _p2pDownloadBytesRead = MutableStateFlow<Long>(0L)
+    val p2pDownloadBytesRead: StateFlow<Long> = _p2pDownloadBytesRead.asStateFlow()
+
+    private val _p2pDownloadTotalBytes = MutableStateFlow<Long>(0L)
+    val p2pDownloadTotalBytes: StateFlow<Long> = _p2pDownloadTotalBytes.asStateFlow()
 
     private val _isDownloadingP2P = MutableStateFlow(false)
     val isDownloadingP2P: StateFlow<Boolean> = _isDownloadingP2P.asStateFlow()
@@ -194,6 +217,61 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
 
     // Application Theme Mode Preference
     private val sharedPreferences = application.getSharedPreferences("cipher_theme_prefs", Context.MODE_PRIVATE)
+
+    // Battery Monitor & Adaptive Battery Saver Preferences
+    private val _batteryInfo = MutableStateFlow(BatteryMonitor.getCurrentBatteryInfo(application))
+    val batteryInfo: StateFlow<BatteryInfo> = _batteryInfo.asStateFlow()
+
+    private val _isBatterySaverEnabled = MutableStateFlow(
+        sharedPreferences.getBoolean("battery_saver_enabled", true)
+    )
+    val isBatterySaverEnabled: StateFlow<Boolean> = _isBatterySaverEnabled.asStateFlow()
+
+    private val _batterySaverTargetFps = MutableStateFlow(
+        sharedPreferences.getInt("battery_saver_target_fps", 2)
+    )
+    val batterySaverTargetFps: StateFlow<Int> = _batterySaverTargetFps.asStateFlow()
+
+    fun getEffectiveStreamFps(): Int {
+        return _batteryInfo.value.getEffectiveFps(
+            configuredFps = _streamFps.value,
+            saverFeatureEnabled = _isBatterySaverEnabled.value,
+            saverFpsCap = _batterySaverTargetFps.value
+        )
+    }
+
+    fun getEffectiveFps(fps: Int = _streamFps.value): Int {
+        return _batteryInfo.value.getEffectiveFps(
+            configuredFps = fps,
+            saverFeatureEnabled = _isBatterySaverEnabled.value,
+            saverFpsCap = _batterySaverTargetFps.value
+        )
+    }
+
+    fun setBatterySaverEnabled(enabled: Boolean) {
+        _isBatterySaverEnabled.value = enabled
+        sharedPreferences.edit().putBoolean("battery_saver_enabled", enabled).apply()
+        startStreamLoop()
+        viewModelScope.launch {
+            if (enabled) {
+                _toastEvent.emit("Adaptive Battery Saver enabled (<20% battery throttles to ${_batterySaverTargetFps.value} FPS)")
+            } else {
+                _toastEvent.emit("Battery Saver disabled (full speed always)")
+            }
+        }
+    }
+
+    fun setBatterySaverTargetFps(fps: Int) {
+        val safeFps = fps.coerceIn(1, 4)
+        _batterySaverTargetFps.value = safeFps
+        sharedPreferences.edit().putInt("battery_saver_target_fps", safeFps).apply()
+        startStreamLoop()
+    }
+
+    fun refreshBatteryInfo() {
+        _batteryInfo.value = BatteryMonitor.getCurrentBatteryInfo(getApplication())
+    }
+
     private val _themeMode = MutableStateFlow(
         try {
             ThemeMode.valueOf(
@@ -424,6 +502,17 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
+        viewModelScope.launch {
+            BatteryMonitor.observeBatteryInfo(application).collect { info ->
+                val prevSaverActive = _batteryInfo.value.isSaverActive(_isBatterySaverEnabled.value)
+                _batteryInfo.value = info
+                val newSaverActive = info.isSaverActive(_isBatterySaverEnabled.value)
+                // If battery status crossed the threshold, restart loop with adapted FPS
+                if (prevSaverActive != newSaverActive) {
+                    startStreamLoop()
+                }
+            }
+        }
         startStreamLoop()
     }
 
@@ -515,7 +604,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             while (isActive) {
                 val chunks = _sendState.value?.qrChunks
                 if (chunks != null && chunks.isNotEmpty() && _isStreamPlaying.value) {
-                    val delayMs = (1000L / _streamFps.value).coerceAtLeast(60L)
+                    val effectiveFps = getEffectiveStreamFps().coerceIn(1, 15)
+                    val delayMs = (1000L / effectiveFps).coerceAtLeast(60L)
                     delay(delayMs)
                     val current = _currentChunkIndex.value
                     val next = (current + 1) % chunks.size
@@ -1140,6 +1230,10 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             _isDownloadingP2P.value = true
             _p2pDownloadProgress.value = 0f
             _p2pDownloadSpeed.value = 0L
+            _p2pDownloadCurrentChunk.value = 0
+            _p2pDownloadTotalChunks.value = 1
+            _p2pDownloadBytesRead.value = 0L
+            _p2pDownloadTotalBytes.value = 0L
 
             val metadataResult = withContext(Dispatchers.IO) {
                 LocalTransferClient.fetchTransferMetadata(hostIp, port)
@@ -1150,9 +1244,13 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             val mimeType = metadata?.mimeType ?: "application/octet-stream"
             val transferId = metadata?.transferId ?: UUID.randomUUID().toString()
 
-            val result = LocalTransferClient.downloadEncryptedPayload(hostIp, port) { bytesRead, total, frac, speed ->
+            val result = LocalTransferClient.downloadEncryptedPayload(hostIp, port) { bytesRead, total, frac, speed, currentChunk, totalChunks ->
                 _p2pDownloadProgress.value = frac
                 _p2pDownloadSpeed.value = speed
+                _p2pDownloadBytesRead.value = bytesRead
+                _p2pDownloadTotalBytes.value = total
+                _p2pDownloadCurrentChunk.value = currentChunk
+                _p2pDownloadTotalChunks.value = totalChunks
             }
 
             _isDownloadingP2P.value = false
@@ -1217,10 +1315,18 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             _isDownloadingP2P.value = true
             _p2pDownloadProgress.value = 0f
             _p2pDownloadSpeed.value = 0L
+            _p2pDownloadCurrentChunk.value = 0
+            _p2pDownloadTotalChunks.value = 1
+            _p2pDownloadBytesRead.value = 0L
+            _p2pDownloadTotalBytes.value = ticket.fileSize
 
-            val result = LocalTransferClient.downloadEncryptedPayload(ticket.hostIp, ticket.port) { bytesRead, total, frac, speed ->
+            val result = LocalTransferClient.downloadEncryptedPayload(ticket.hostIp, ticket.port) { bytesRead, total, frac, speed, currentChunk, totalChunks ->
                 _p2pDownloadProgress.value = frac
                 _p2pDownloadSpeed.value = speed
+                _p2pDownloadBytesRead.value = bytesRead
+                _p2pDownloadTotalBytes.value = if (total > 0) total else ticket.fileSize
+                _p2pDownloadCurrentChunk.value = currentChunk
+                _p2pDownloadTotalChunks.value = totalChunks
             }
 
             _isDownloadingP2P.value = false
@@ -1403,11 +1509,30 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearAppCache(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
+            QrCodeGenerator.clearCache()
             val success = FileUtils.clearTemporaryCache(context)
             if (success) {
                 _toastEvent.emit("Temporary cache cleared")
             } else {
                 _toastEvent.emit("Cache cleanup completed")
+            }
+        }
+    }
+
+    fun clearCacheAndHistory(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val all = transfers.value
+            all.forEach { r ->
+                r.localFilePath?.let {
+                    try { File(it).delete() } catch (_: Exception) {}
+                }
+            }
+            transferRepository.deleteRecords(all)
+            _inspectedRecord.value = null
+            QrCodeGenerator.clearCache()
+            FileUtils.clearTemporaryCache(context)
+            withContext(Dispatchers.Main) {
+                _toastEvent.emit("Wiped all transfer history & local cache")
             }
         }
     }

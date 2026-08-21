@@ -127,7 +127,7 @@ object LocalTransferClient {
     suspend fun downloadEncryptedPayload(
         hostIp: String,
         port: Int,
-        onProgress: (bytesRead: Long, totalBytes: Long, progressFraction: Float, speedBytesPerSec: Long) -> Unit
+        onProgress: (bytesRead: Long, totalBytes: Long, progressFraction: Float, speedBytesPerSec: Long, currentChunkIndex: Int, totalChunks: Int) -> Unit
     ): Result<ByteArray> = withContext(Dispatchers.IO) {
         try {
             val url = "http://$hostIp:$port/download"
@@ -145,9 +145,15 @@ object LocalTransferClient {
             val inputStream: InputStream = body.byteStream()
             val outputStream = ByteArrayOutputStream()
 
-            val buffer = ByteArray(32 * 1024)
+            val bufferSize = 32 * 1024
+            val buffer = ByteArray(bufferSize)
+            val totalCalculatedChunks = if (contentLength > 0) {
+                ((contentLength + bufferSize - 1) / bufferSize).toInt().coerceAtLeast(1)
+            } else 1
+
             var bytesReadTotal = 0L
             var read: Int
+            var chunkIndex = 0
             var lastSpeedTime = System.currentTimeMillis()
             var bytesSinceLastSpeed = 0L
             var currentSpeed = 0L
@@ -165,8 +171,10 @@ object LocalTransferClient {
                     bytesSinceLastSpeed = 0L
                 }
 
+                val currentChunk = (bytesReadTotal / bufferSize).toInt().coerceIn(0, totalCalculatedChunks - 1)
                 val fraction = if (contentLength > 0) bytesReadTotal.toFloat() / contentLength else 0f
-                onProgress(bytesReadTotal, contentLength, fraction, currentSpeed)
+                onProgress(bytesReadTotal, contentLength, fraction, currentSpeed, currentChunk, totalCalculatedChunks)
+                chunkIndex++
             }
 
             outputStream.flush()

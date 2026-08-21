@@ -115,6 +115,7 @@ import com.example.ui.theme.CyberEmerald
 import com.example.ui.theme.CyberEmeraldBright
 import com.example.ui.theme.CyberViolet
 import com.example.ui.theme.CyberVioletBright
+import com.example.util.BatteryInfo
 import com.example.util.FileUtils
 import com.example.viewmodel.SendPreparationState
 
@@ -133,6 +134,9 @@ fun SendScreen(
     errorCorrectionLevel: QrErrorCorrectionLevel = QrErrorCorrectionLevel.LEVEL_M,
     moduleShape: QrModuleShape = QrModuleShape.SQUARE,
     isQrInverted: Boolean = false,
+    batteryInfo: BatteryInfo? = null,
+    isBatterySaverEnabled: Boolean = true,
+    effectiveFps: Int = streamFps,
     p2pServerStatus: LocalTransferServer.ServerStatus,
     p2pServerProgress: Float,
     p2pServerSpeed: Long = 0L,
@@ -731,6 +735,9 @@ fun SendScreen(
                         errorCorrectionLevel = errorCorrectionLevel,
                         moduleShape = moduleShape,
                         isQrInverted = isQrInverted,
+                        batteryInfo = batteryInfo,
+                        isBatterySaverEnabled = isBatterySaverEnabled,
+                        effectiveFps = effectiveFps,
                         onTogglePlay = onTogglePlay,
                         onSelectChunk = onSelectChunk,
                         onNextChunk = onNextChunk,

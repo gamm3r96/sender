@@ -26,6 +26,18 @@ class LocalTransferServer {
     private val _transferSpeedBytesPerSec = MutableStateFlow<Long>(0L)
     val transferSpeedBytesPerSec: StateFlow<Long> = _transferSpeedBytesPerSec.asStateFlow()
 
+    private val _currentChunkIndex = MutableStateFlow<Int>(0)
+    val currentChunkIndex: StateFlow<Int> = _currentChunkIndex.asStateFlow()
+
+    private val _totalChunks = MutableStateFlow<Int>(1)
+    val totalChunks: StateFlow<Int> = _totalChunks.asStateFlow()
+
+    private val _bytesTransferred = MutableStateFlow<Long>(0L)
+    val bytesTransferred: StateFlow<Long> = _bytesTransferred.asStateFlow()
+
+    private val _totalBytesToTransfer = MutableStateFlow<Long>(0L)
+    val totalBytesToTransfer: StateFlow<Long> = _totalBytesToTransfer.asStateFlow()
+
     sealed interface ServerStatus {
         data object Stopped : ServerStatus
         data class Running(
@@ -88,25 +100,35 @@ class LocalTransferServer {
                     exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
 
                     val totalBytes = encryptedPayload.size.toLong()
+                    val bufferSize = 32 * 1024
+                    val calculatedTotalChunks = ((encryptedPayload.size + bufferSize - 1) / bufferSize).coerceAtLeast(1)
+                    _totalChunks.value = calculatedTotalChunks
+                    _totalBytesToTransfer.value = totalBytes
+                    _bytesTransferred.value = 0L
+                    _currentChunkIndex.value = 0
+
                     exchange.sendResponseHeaders(200, totalBytes)
 
                     val outputStream: OutputStream = exchange.responseBody
-                    val bufferSize = 32 * 1024
                     var bytesSent = 0L
                     var offset = 0
+                    var chunkIdx = 0
                     var lastSpeedCalcTime = System.currentTimeMillis()
                     var bytesSinceLastCalc = 0L
 
                     while (offset < encryptedPayload.size) {
                         val length = (encryptedPayload.size - offset).coerceAtMost(bufferSize)
+                        _currentChunkIndex.value = chunkIdx
                         outputStream.write(encryptedPayload, offset, length)
                         offset += length
                         bytesSent += length
                         bytesSinceLastCalc += length
+                        _bytesTransferred.value = bytesSent
+                        chunkIdx++
 
                         val now = System.currentTimeMillis()
                         val elapsed = now - lastSpeedCalcTime
-                        if (elapsed >= 500) {
+                        if (elapsed >= 400) {
                             val speed = (bytesSinceLastCalc * 1000L) / elapsed.coerceAtLeast(1)
                             _transferSpeedBytesPerSec.value = speed
                             lastSpeedCalcTime = now
@@ -115,6 +137,8 @@ class LocalTransferServer {
 
                         _transferProgress.value = bytesSent.toFloat() / totalBytes
                     }
+
+                    _currentChunkIndex.value = calculatedTotalChunks - 1
 
                     outputStream.flush()
                     outputStream.close()

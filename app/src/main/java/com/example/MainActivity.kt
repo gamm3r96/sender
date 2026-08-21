@@ -156,6 +156,9 @@ fun CipherApp(viewModel: CipherViewModel) {
     val isQrInverted by viewModel.isQrInverted.collectAsStateWithLifecycle()
     val scannerContrastMode by viewModel.scannerContrastMode.collectAsStateWithLifecycle()
     val isScreenBrightnessBoostEnabled by viewModel.isScreenBrightnessBoostEnabled.collectAsStateWithLifecycle()
+    val batteryInfo by viewModel.batteryInfo.collectAsStateWithLifecycle()
+    val isBatterySaverEnabled by viewModel.isBatterySaverEnabled.collectAsStateWithLifecycle()
+    val batterySaverTargetFps by viewModel.batterySaverTargetFps.collectAsStateWithLifecycle()
 
     fun triggerBiometricAuth() {
         biometricErrorMessage = null
@@ -369,6 +372,9 @@ fun CipherApp(viewModel: CipherViewModel) {
                             errorCorrectionLevel = qrErrorCorrectionLevel,
                             moduleShape = qrModuleShape,
                             isQrInverted = isQrInverted,
+                            batteryInfo = batteryInfo,
+                            isBatterySaverEnabled = isBatterySaverEnabled,
+                            effectiveFps = viewModel.getEffectiveFps(streamFps),
                             p2pServerStatus = p2pServerStatus,
                             p2pServerProgress = p2pServerProgress,
                             p2pServerSpeed = p2pServerSpeed,
@@ -507,12 +513,18 @@ fun CipherApp(viewModel: CipherViewModel) {
                             onSelectDensityPreset = { viewModel.setDensityPreset(it) },
                             streamFps = streamFps,
                             onSetStreamFps = { viewModel.setStreamFps(it) },
+                            batteryInfo = batteryInfo,
+                            isBatterySaverEnabled = isBatterySaverEnabled,
+                            onToggleBatterySaver = { viewModel.setBatterySaverEnabled(it) },
+                            batterySaverTargetFps = batterySaverTargetFps,
+                            onSetBatterySaverTargetFps = { viewModel.setBatterySaverTargetFps(it) },
                             teamKeys = teamKeys,
                             activeTeamKey = activeTeamKey,
                             onSelectTeamKey = { viewModel.setActiveTeamKey(it) },
                             transfers = transfers,
                             onPurgeAllTransfers = { viewModel.purgeAllTransfers() },
                             onClearCache = { viewModel.clearAppCache(context) },
+                            onClearCacheAndHistory = { viewModel.clearCacheAndHistory(context) },
                             onShareApk = { viewModel.shareApk(context) },
                             onNavigateToAbout = { currentDestination = AppDestination.ABOUT }
                         )

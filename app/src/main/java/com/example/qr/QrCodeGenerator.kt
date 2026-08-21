@@ -60,6 +60,13 @@ object QrCodeGenerator {
     }
 
     /**
+     * Clears all cached QR bit matrices from memory.
+     */
+    fun clearCache() {
+        bitMatrixCache.evictAll()
+    }
+
+    /**
      * Generates a styled QR Code Bitmap from raw string content with customizable color scheme, module shape, and error correction.
      */
     fun generateQrBitmap(

@@ -29,9 +29,15 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.BatteryStd
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fingerprint
@@ -110,6 +116,7 @@ import com.example.ui.theme.CyberEmeraldBright
 import com.example.ui.theme.CyberViolet
 import com.example.ui.theme.CyberVioletBright
 import com.example.ui.theme.ThemeMode
+import com.example.util.BatteryInfo
 import com.example.util.FileUtils
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -144,12 +151,18 @@ fun SettingsScreen(
     onSelectDensityPreset: (QrDensityPreset) -> Unit,
     streamFps: Int,
     onSetStreamFps: (Int) -> Unit,
+    batteryInfo: BatteryInfo? = null,
+    isBatterySaverEnabled: Boolean = true,
+    onToggleBatterySaver: (Boolean) -> Unit = {},
+    batterySaverTargetFps: Int = 2,
+    onSetBatterySaverTargetFps: (Int) -> Unit = {},
     teamKeys: List<TeamKey>,
     activeTeamKey: TeamKey?,
     onSelectTeamKey: (TeamKey) -> Unit,
     transfers: List<TransferRecord>,
     onPurgeAllTransfers: () -> Unit,
     onClearCache: () -> Unit,
+    onClearCacheAndHistory: () -> Unit = {},
     onShareApk: () -> Unit,
     onNavigateToAbout: () -> Unit,
     modifier: Modifier = Modifier
@@ -159,6 +172,7 @@ fun SettingsScreen(
 
     var showPinDialog by remember { mutableStateOf(false) }
     var showPurgeConfirmDialog by remember { mutableStateOf(false) }
+    var showClearHistoryDialog by remember { mutableStateOf(false) }
     var newPinText by remember { mutableStateOf("") }
     var confirmPinText by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf<String?>(null) }
@@ -907,7 +921,147 @@ fun SettingsScreen(
             }
         }
 
-        // Section 5: Keyring & Active Team Key
+        // Section 5: Battery Saver & Power Optimization
+        item {
+            SettingsCard(
+                title = "Battery Saver & Power Optimization",
+                icon = if (batteryInfo?.isLowBattery == true) Icons.Default.BatteryAlert else if (batteryInfo?.isCharging == true) Icons.Default.BatteryChargingFull else Icons.Default.BatterySaver,
+                iconTint = if (batteryInfo?.isLowBattery == true) CyberAmber else CyberEmeraldBright
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Battery Telemetry Status Bar
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (batteryInfo?.isCharging == true) Icons.Default.Bolt else Icons.Default.BatteryStd,
+                                    contentDescription = null,
+                                    tint = if (batteryInfo?.isLowBattery == true) CyberAmber else CyberEmeraldBright,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "Current Battery: ${batteryInfo?.level ?: 100}%",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = when {
+                                            batteryInfo?.isCharging == true -> "Device Charging • Power Limit Lifted"
+                                            batteryInfo?.isLowBattery == true -> "Low Battery (<20%) • Stream Throttled"
+                                            else -> "Battery Optimal • Standard QR Animation"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (batteryInfo?.isLowBattery == true) CyberAmber else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isBatterySaverEnabled && batteryInfo?.isLowBattery == true) CyberAmber.copy(alpha = 0.2f) else CyberEmerald.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = if (isBatterySaverEnabled && batteryInfo?.isLowBattery == true) "SAVER ON" else if (isBatterySaverEnabled) "READY" else "DISABLED",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isBatterySaverEnabled && batteryInfo?.isLowBattery == true) CyberAmber else CyberEmeraldBright,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Toggle Adaptive Battery Saver
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Adaptive Battery Saver",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Reduces animated QR frame rate when battery is below 20% to prevent sudden power collapse during transfers.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isBatterySaverEnabled,
+                            onCheckedChange = onToggleBatterySaver,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = CyberEmeraldBright,
+                                checkedTrackColor = CyberEmerald.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("settings_battery_saver_switch")
+                        )
+                    }
+
+                    // Low Battery Target FPS Selector
+                    if (isBatterySaverEnabled) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Low Battery Target Frame Rate: ${batterySaverTargetFps} FPS",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(1, 2, 3, 4).forEach { targetFps ->
+                                    val isSelected = batterySaverTargetFps == targetFps
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSelected) CyberEmerald.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (isSelected) CyberEmeraldBright else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { onSetBatterySaverTargetFps(targetFps) }
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.padding(vertical = 8.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "$targetFps FPS",
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                ),
+                                                color = if (isSelected) CyberEmeraldBright else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section 6: Keyring & Active Team Key
         item {
             SettingsCard(
                 title = "Cryptographic Keyring Default",
@@ -1105,6 +1259,29 @@ fun SettingsScreen(
                         )
                     }
 
+                    // Primary Clear Cache / History Action Button
+                    Button(
+                        onClick = { showClearHistoryDialog = true },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberAmber.copy(alpha = 0.9f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_clear_cache_history_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Clear Cache / History",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.Black
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1122,7 +1299,7 @@ fun SettingsScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Clear Cache", style = MaterialTheme.typography.labelSmall)
+                            Text("Clear Cache Only", style = MaterialTheme.typography.labelSmall)
                         }
 
                         Button(
@@ -1277,6 +1454,43 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showPurgeConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Modal: Confirm Clear Cache & History
+    if (showClearHistoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearHistoryDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteForever,
+                    contentDescription = null,
+                    tint = CyberAmber,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text("Clear Cache & History?")
+            },
+            text = {
+                Text("This will wipe all completed and failed transfer logs, pre-generated QR stream bit matrices, and temporary vault files from local storage.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onClearCacheAndHistory()
+                        showClearHistoryDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberAmber)
+                ) {
+                    Text("Clear All Now", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearHistoryDialog = false }) {
                     Text("Cancel")
                 }
             }

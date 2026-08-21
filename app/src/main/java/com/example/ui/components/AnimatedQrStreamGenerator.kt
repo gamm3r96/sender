@@ -30,6 +30,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FirstPage
@@ -95,6 +99,7 @@ import com.example.ui.theme.CyberEmerald
 import com.example.ui.theme.CyberEmeraldBright
 import com.example.ui.theme.CyberViolet
 import com.example.ui.theme.CyberVioletBright
+import com.example.util.BatteryInfo
 import com.example.util.FileUtils
 
 /**
@@ -116,6 +121,9 @@ fun AnimatedQrStreamGenerator(
     errorCorrectionLevel: QrErrorCorrectionLevel = QrErrorCorrectionLevel.LEVEL_M,
     moduleShape: QrModuleShape = QrModuleShape.SQUARE,
     isQrInverted: Boolean = false,
+    batteryInfo: BatteryInfo? = null,
+    isBatterySaverEnabled: Boolean = true,
+    effectiveFps: Int = streamFps,
     onTogglePlay: () -> Unit,
     onSelectChunk: (Int) -> Unit,
     onNextChunk: () -> Unit,
@@ -139,8 +147,11 @@ fun AnimatedQrStreamGenerator(
         if (currentQrString.isNotEmpty()) CryptoManager.parseQrChunk(currentQrString) else null
     }
 
+    val isBatterySaverActive = batteryInfo?.isSaverActive(isBatterySaverEnabled) == true
+    val activeFps = if (isBatterySaverActive) effectiveFps else streamFps
+
     val progressFraction = (safeIndex + 1).toFloat() / totalChunks.toFloat()
-    val estimatedBandwidthBytesPerSec = (densityPreset.chunkSizeBytes * streamFps).toLong()
+    val estimatedBandwidthBytesPerSec = (densityPreset.chunkSizeBytes * activeFps).toLong()
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse_halo")
     val haloAlpha by infiniteTransition.animateFloat(
@@ -236,8 +247,19 @@ fun AnimatedQrStreamGenerator(
                     // Live playback indicator
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (isPlaying) CyberEmerald.copy(alpha = 0.18f) else CyberAmber.copy(alpha = 0.18f),
-                        border = BorderStroke(1.dp, if (isPlaying) CyberEmerald.copy(alpha = haloAlpha) else CyberAmber)
+                        color = when {
+                            !isPlaying -> CyberAmber.copy(alpha = 0.18f)
+                            isBatterySaverActive -> CyberAmber.copy(alpha = 0.22f)
+                            else -> CyberEmerald.copy(alpha = 0.18f)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            when {
+                                !isPlaying -> CyberAmber
+                                isBatterySaverActive -> CyberAmber.copy(alpha = haloAlpha)
+                                else -> CyberEmerald.copy(alpha = haloAlpha)
+                            }
+                        )
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -247,20 +269,66 @@ fun AnimatedQrStreamGenerator(
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(if (isPlaying) CyberEmeraldBright else CyberAmber)
+                                    .background(
+                                        when {
+                                            !isPlaying -> CyberAmber
+                                            isBatterySaverActive -> CyberAmber
+                                            else -> CyberEmeraldBright
+                                        }
+                                    )
                             )
                             Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = if (isPlaying) "${streamFps} FPS" else "PAUSED",
+                                text = when {
+                                    !isPlaying -> "PAUSED"
+                                    isBatterySaverActive -> "${activeFps} FPS (SAVER)"
+                                    else -> "${activeFps} FPS"
+                                },
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
-                                color = if (isPlaying) CyberEmeraldBright else CyberAmber
+                                color = when {
+                                    !isPlaying -> CyberAmber
+                                    isBatterySaverActive -> CyberAmber
+                                    else -> CyberEmeraldBright
+                                }
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            // Battery Saver Active Warning Banner
+            if (isBatterySaverActive) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = CyberAmber.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, CyberAmber.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BatteryAlert,
+                            contentDescription = "Battery Saver",
+                            tint = CyberAmber,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Battery Saver Active (${batteryInfo?.percentage ?: 0}%): Frame rate reduced to ${activeFps} FPS (from ${streamFps} FPS) to sustain transfer stability and prevent shutdown.",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Main Visual QR Code Stage
             Box(
@@ -670,11 +738,53 @@ fun AnimatedQrStreamGenerator(
                         )
                     }
 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isBatterySaverActive) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = CyberAmber.copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, CyberAmber)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.BatteryAlert,
+                                        contentDescription = null,
+                                        tint = CyberAmber,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Saver: ${activeFps} FPS",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp
+                                        ),
+                                        color = CyberAmber
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = if (isBatterySaverActive) "Set: $streamFps FPS" else "$streamFps FPS",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = if (isBatterySaverActive) MaterialTheme.colorScheme.onSurfaceVariant else CyberCyanBright
+                            )
+                        )
+                    }
+                }
+
+                if (isBatterySaverActive) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "$streamFps FPS",
+                        text = "⚡ Battery below 20% (${batteryInfo?.percentage ?: 0}%). Speed capped at ${activeFps} FPS for power & thermal protection.",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = CyberCyanBright
+                            fontSize = 10.sp,
+                            color = CyberAmber
                         )
                     )
                 }
@@ -882,11 +992,12 @@ fun AnimatedQrStreamGenerator(
                                     color = Color.White
                                 )
                             )
+                            val fpsLabel = if (isBatterySaverActive) "${activeFps} FPS (⚡ Saver <20%)" else "${activeFps} FPS"
                             Text(
-                                text = "Chunk ${safeIndex + 1} of $totalChunks • Loop #$loopCount (${streamFps} FPS)",
+                                text = "Chunk ${safeIndex + 1} of $totalChunks • Loop #$loopCount ($fpsLabel)",
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontFamily = FontFamily.Monospace,
-                                    color = CyberEmeraldBright
+                                    color = if (isBatterySaverActive) CyberAmber else CyberEmeraldBright
                                 )
                             )
                         }

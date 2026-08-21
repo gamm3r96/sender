@@ -116,4 +116,6 @@ data class P2PTransferTicket(
     val sha256: String,
     val encryptionKeyBase64: String,
     val teamName: String? = null
-)
+) {
+    val fileSize: Long get() = if (encryptedSize > 0) encryptedSize else originalSize
+}
