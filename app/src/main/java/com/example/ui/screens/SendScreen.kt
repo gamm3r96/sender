@@ -87,11 +87,17 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.crypto.CryptoManager
+import com.example.data.QrColorScheme
+import com.example.data.QrDensityPreset
+import com.example.data.QrErrorCorrectionLevel
+import com.example.data.QrModuleShape
 import com.example.data.TeamKey
 import com.example.data.TransferMode
 import com.example.p2p.LocalTransferServer
 import com.example.ui.components.AnimatedPulseBadge
+import com.example.ui.components.AnimatedQrStreamGenerator
 import com.example.ui.components.CyberSecurityBadge
+import com.example.ui.components.FilePreviewCard
 import com.example.ui.components.QrCodeView
 import com.example.ui.components.SafetyNumberBox
 import com.example.ui.theme.CyberCyan
@@ -112,6 +118,12 @@ fun SendScreen(
     currentChunkIndex: Int,
     isStreamPlaying: Boolean,
     streamFps: Int,
+    densityPreset: QrDensityPreset = QrDensityPreset.STANDARD,
+    loopCount: Int = 1,
+    colorScheme: QrColorScheme = QrColorScheme.HIGH_CONTRAST_MONO,
+    errorCorrectionLevel: QrErrorCorrectionLevel = QrErrorCorrectionLevel.LEVEL_M,
+    moduleShape: QrModuleShape = QrModuleShape.SQUARE,
+    isQrInverted: Boolean = false,
     p2pServerStatus: LocalTransferServer.ServerStatus,
     p2pServerProgress: Float,
     onSelectFile: (Uri, TransferMode, String) -> Unit,
@@ -119,7 +131,16 @@ fun SendScreen(
     onSwitchMode: (TransferMode) -> Unit,
     onTogglePlay: () -> Unit,
     onSelectChunk: (Int) -> Unit,
+    onNextChunk: () -> Unit = {},
+    onPrevChunk: () -> Unit = {},
+    onJumpFirst: () -> Unit = {},
+    onJumpLast: () -> Unit = {},
     onSetStreamFps: (Int) -> Unit,
+    onSetDensityPreset: (QrDensityPreset) -> Unit = {},
+    onSetColorScheme: (QrColorScheme) -> Unit = {},
+    onSetErrorCorrectionLevel: (QrErrorCorrectionLevel) -> Unit = {},
+    onSetModuleShape: (QrModuleShape) -> Unit = {},
+    onToggleInverted: () -> Unit = {},
     onSelectTeamKey: (TeamKey) -> Unit,
     onClearState: () -> Unit,
     modifier: Modifier = Modifier
@@ -668,149 +689,47 @@ fun SendScreen(
                 }
             }
 
+            // Interactive Pre-Broadcast Content Preview (Thumbnail / Code Snippet / Hex)
+            item {
+                FilePreviewCard(
+                    fileName = sendState.fileName,
+                    mimeType = sendState.mimeType,
+                    fileSize = sendState.originalSize,
+                    filePath = sendState.sourceFilePath,
+                    rawTextPreview = sendState.rawTextPreview
+                )
+            }
+
             if (sendState.mode == TransferMode.QR_STREAM) {
-                // QR STREAM ANIMATED CAROUSEL
+                // HIGH CAPACITY ANIMATED QR STREAM GENERATOR
                 item {
-                    val chunks = sendState.qrChunks
-                    val safeIndex = currentChunkIndex.coerceIn(0, (chunks.size - 1).coerceAtLeast(0))
-                    val currentQrString = chunks.getOrNull(safeIndex) ?: ""
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Chunk indicator badge
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            AnimatedPulseBadge(
-                                text = "CHUNK ${safeIndex + 1} OF ${chunks.size}",
-                                color = CyberEmeraldBright
-                            )
-
-                            Text(
-                                text = "Stream Rate: $streamFps FPS",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = CyberCyanBright
-                            )
-                        }
-
-                        // QR Code Box
-                        QrCodeView(
-                            qrContent = currentQrString,
-                            sizePx = 600,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp)
-                                .clickable { isFullScreenQr = true }
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Controls: Prev / Play-Pause / Next
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    val prev = if (safeIndex - 1 < 0) chunks.size - 1 else safeIndex - 1
-                                    onSelectChunk(prev)
-                                },
-                                modifier = Modifier.testTag("prev_chunk_btn")
-                            ) {
-                                Icon(Icons.Default.SkipPrevious, contentDescription = "Previous")
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Button(
-                                onClick = onTogglePlay,
-                                shape = CircleShape,
-                                modifier = Modifier
-                                    .size(54.dp)
-                                    .testTag("toggle_play_stream_btn"),
-                                colors = ButtonDefaults.buttonColors(containerColor = CyberEmerald),
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isStreamPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isStreamPlaying) "Pause" else "Play",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            IconButton(
-                                onClick = {
-                                    val next = (safeIndex + 1) % chunks.size
-                                    onSelectChunk(next)
-                                },
-                                modifier = Modifier.testTag("next_chunk_btn")
-                            ) {
-                                Icon(Icons.Default.SkipNext, contentDescription = "Next")
-                            }
-                        }
-
-                        // FPS Speed Slider
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Speed, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Speed: ${streamFps}x", style = MaterialTheme.typography.labelSmall)
-                            Slider(
-                                value = streamFps.toFloat(),
-                                onValueChange = { onSetStreamFps(it.toInt()) },
-                                valueRange = 1f..10f,
-                                steps = 8,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(horizontal = 8.dp)
-                                    .testTag("fps_slider")
-                            )
-                        }
-
-                        // Chunk Dots / Quick Jump Matrix
-                        if (chunks.size > 1) {
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp)
-                            ) {
-                                itemsIndexed(chunks) { idx, _ ->
-                                    val isCurrent = idx == safeIndex
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(
-                                                if (isCurrent) CyberEmerald else MaterialTheme.colorScheme.surfaceVariant
-                                            )
-                                            .clickable { onSelectChunk(idx) },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "${idx + 1}",
-                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                            color = if (isCurrent) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    AnimatedQrStreamGenerator(
+                        chunks = sendState.qrChunks,
+                        currentChunkIndex = currentChunkIndex,
+                        isPlaying = isStreamPlaying,
+                        streamFps = streamFps,
+                        densityPreset = densityPreset,
+                        loopCount = loopCount,
+                        fileName = sendState.fileName,
+                        originalSizeBytes = sendState.originalSize,
+                        encryptedSizeBytes = sendState.encryptedPayload?.envelopeBytes?.size?.toLong() ?: 0L,
+                        colorScheme = colorScheme,
+                        errorCorrectionLevel = errorCorrectionLevel,
+                        moduleShape = moduleShape,
+                        isQrInverted = isQrInverted,
+                        onTogglePlay = onTogglePlay,
+                        onSelectChunk = onSelectChunk,
+                        onNextChunk = onNextChunk,
+                        onPrevChunk = onPrevChunk,
+                        onJumpFirst = onJumpFirst,
+                        onJumpLast = onJumpLast,
+                        onSetFps = onSetStreamFps,
+                        onSetDensityPreset = onSetDensityPreset,
+                        onSetColorScheme = onSetColorScheme,
+                        onSetErrorCorrectionLevel = onSetErrorCorrectionLevel,
+                        onSetModuleShape = onSetModuleShape,
+                        onToggleInverted = onToggleInverted
+                    )
                 }
             } else {
                 // P2P LOCAL NETWORK DIRECT TRANSFER HOST CARD

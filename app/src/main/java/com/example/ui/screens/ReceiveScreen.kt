@@ -71,8 +71,10 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
@@ -92,6 +94,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -130,6 +134,9 @@ import androidx.core.content.ContextCompat
 import com.example.crypto.P2PTransferTicket
 import com.example.crypto.QrChunkProgress
 import com.example.qr.QrCodeScannerAnalyzer
+import com.example.ui.components.AnimatedStreamProgressBar
+import com.example.ui.components.CameraPermissionFlow
+import com.example.ui.components.CompactStreamProgressBar
 import com.example.ui.components.PermissionsEducationalDialog
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
@@ -158,6 +165,9 @@ fun ReceiveScreen(
     streamTimeoutSeconds: Int = 15,
     streamRemainingSeconds: Int? = null,
     lastTimeoutNotice: StreamTimeoutNotice? = null,
+    isHapticEnabled: Boolean = true,
+    onToggleHaptic: (Boolean) -> Unit = {},
+    onTestHaptic: (Int) -> Unit = {},
     onQrCodeDetected: (String) -> Unit,
     onDownloadP2P: (P2PTransferTicket) -> Unit,
     onDismissP2P: () -> Unit,
@@ -212,18 +222,16 @@ fun ReceiveScreen(
         }
     }
 
-    LaunchedEffect(cameraPermissionState.status.isGranted) {
-        if (!cameraPermissionState.status.isGranted) {
-            showPermissionEducationalDialog = true
-        }
-    }
-
-    Box(
+    CameraPermissionFlow(
+        cameraPermissionState = cameraPermissionState,
+        onOpenEducationalDialog = { showPermissionEducationalDialog = true },
         modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
     ) {
-        if (cameraPermissionState.status.isGranted) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
             // Live CameraX Viewfinder with Pinch-to-Zoom & Tap-to-Focus
             Box(
                 modifier = Modifier
@@ -313,264 +321,227 @@ fun ReceiveScreen(
                     TapFocusIndicator(point = focusPoint!!)
                 }
             }
-        } else {
-            // Camera Permission Request Screen
-            Column(
+
+            // Top Scanner HUD Toolbar
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                    .fillMaxWidth()
+                    .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(CyberEmerald.copy(alpha = 0.15f))
-                        .border(1.dp, CyberEmerald.copy(alpha = 0.5f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = null,
-                        tint = CyberEmeraldBright,
-                        modifier = Modifier.size(40.dp)
+                // Live Status Indicator Pill
+                Surface(
+                    color = Color.Black.copy(alpha = 0.75f),
+                    shape = RoundedCornerShape(100.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (scanProgress != null) CyberCyanBright.copy(alpha = 0.7f) else CyberEmerald.copy(alpha = 0.5f)
                     )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "Camera Permission Required",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "CipherQR requires camera access to scan multi-frame animated QR streams, P2P connection tickets, and cryptographic team keys.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.LightGray,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = { showPermissionEducationalDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = CyberEmerald),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.testTag("grant_camera_permission_btn")
                 ) {
-                    Icon(Icons.Default.Shield, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Grant Camera Access", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        // Top Scanner HUD Toolbar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Live Status Indicator Pill
-            Surface(
-                color = Color.Black.copy(alpha = 0.75f),
-                shape = RoundedCornerShape(100.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (scanProgress != null) CyberCyanBright.copy(alpha = 0.7f) else CyberEmerald.copy(alpha = 0.5f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .clip(CircleShape)
-                            .background(if (scanProgress != null) CyberCyanBright else CyberEmeraldBright)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (scanProgress != null) {
-                            "ASSEMBLING: ${scanProgress.receivedCount}/${scanProgress.totalChunks}"
-                        } else {
-                            "AIR-GAP SCANNER ACTIVE"
-                        },
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        ),
-                        color = Color.White
-                    )
-                }
-            }
-
-            // Quick Camera Actions
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Stream Timeout Settings Button
-                IconButton(
-                    onClick = { showTimeoutSettingsDialog = true },
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.65f))
-                        .border(1.dp, CyberCyanBright.copy(alpha = 0.4f), CircleShape)
-                        .testTag("stream_timeout_config_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Timer,
-                        contentDescription = "Stream Inactivity Timeout Settings (${streamTimeoutSeconds}s)",
-                        tint = CyberCyanBright
-                    )
-                }
-
-                // Torch / Flashlight Toggle
-                if (hasTorch) {
-                    IconButton(
-                        onClick = {
-                            isTorchOn = !isTorchOn
-                            cameraControl?.enableTorch(isTorchOn)
-                        },
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(if (isTorchOn) CyberEmerald.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.65f))
-                            .border(1.dp, if (isTorchOn) CyberEmeraldBright else Color.White.copy(alpha = 0.2f), CircleShape)
-                            .testTag("toggle_torch_btn")
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isTorchOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                            contentDescription = "Flashlight",
-                            tint = if (isTorchOn) CyberEmeraldBright else Color.White
+                        Box(
+                            modifier = Modifier
+                                .size(9.dp)
+                                .clip(CircleShape)
+                                .background(if (scanProgress != null) CyberCyanBright else CyberEmeraldBright)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (scanProgress != null) {
+                                "ASSEMBLING: ${scanProgress.receivedCount}/${scanProgress.totalChunks}"
+                            } else {
+                                "AIR-GAP SCANNER ACTIVE"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            color = Color.White
                         )
                     }
                 }
 
-                // Camera Lens Switch (Rear/Front)
-                IconButton(
-                    onClick = {
-                        cameraSelector = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
-                            CameraSelector.DEFAULT_FRONT_CAMERA
-                        } else {
-                            CameraSelector.DEFAULT_BACK_CAMERA
-                        }
-                    },
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.65f))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                        .testTag("switch_camera_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Cameraswitch,
-                        contentDescription = "Switch Camera",
-                        tint = Color.White
-                    )
-                }
-
-                // Photo Gallery Barcode Scanner
-                IconButton(
-                    onClick = { galleryLauncher.launch("image/*") },
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.65f))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                        .testTag("gallery_picker_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Image,
-                        contentDescription = "Scan Image",
-                        tint = Color.White
-                    )
-                }
-            }
-        }
-
-        // Animated Inactivity Stream Timeout Alert Banner
-        AnimatedVisibility(
-            visible = lastTimeoutNotice != null,
-            enter = fadeIn() + scaleIn(initialScale = 0.92f),
-            exit = fadeOut() + scaleOut(targetScale = 0.92f),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 74.dp, start = 16.dp, end = 16.dp)
-        ) {
-            lastTimeoutNotice?.let { notice ->
-                StreamTimeoutAlertCard(
-                    notice = notice,
-                    onDismiss = onDismissTimeoutNotice,
-                    onOpenSettings = {
-                        onDismissTimeoutNotice()
-                        showTimeoutSettingsDialog = true
-                    }
-                )
-            }
-        }
-
-        // Quick Zoom Preset Buttons (Floating on Viewfinder)
-        Surface(
-            color = Color.Black.copy(alpha = 0.65f),
-            shape = RoundedCornerShape(100.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 12.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                availableZooms.forEach { zoom ->
-                    val isSelected = (currentZoomRatio - zoom).let { Math.abs(it) < 0.3f }
-                    Box(
+                // Quick Camera Actions
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Stream Timeout & Tactile Settings Button
+                    IconButton(
+                        onClick = { showTimeoutSettingsDialog = true },
                         modifier = Modifier
-                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(if (isSelected) CyberEmerald else Color.Transparent)
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .border(1.dp, CyberCyanBright.copy(alpha = 0.4f), CircleShape)
+                            .testTag("stream_timeout_config_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Scanner & Haptic Settings",
+                            tint = CyberCyanBright
+                        )
+                    }
+
+                    // Tactile Haptic Feedback Quick Toggle
+                    IconButton(
+                        onClick = { onToggleHaptic(!isHapticEnabled) },
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (isHapticEnabled) CyberEmerald.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.65f))
+                            .border(1.dp, if (isHapticEnabled) CyberEmeraldBright else Color.White.copy(alpha = 0.2f), CircleShape)
+                            .testTag("toggle_haptic_quick_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Vibration,
+                            contentDescription = if (isHapticEnabled) "Tactile Haptics Active" else "Tactile Haptics Disabled",
+                            tint = if (isHapticEnabled) CyberEmeraldBright else Color.Gray
+                        )
+                    }
+
+                    // Torch / Flashlight Toggle
+                    if (hasTorch) {
+                        IconButton(
+                            onClick = {
+                                isTorchOn = !isTorchOn
+                                cameraControl?.enableTorch(isTorchOn)
+                            },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(if (isTorchOn) CyberEmerald.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.65f))
+                                .border(1.dp, if (isTorchOn) CyberEmeraldBright else Color.White.copy(alpha = 0.2f), CircleShape)
+                                .testTag("toggle_torch_btn")
+                        ) {
+                            Icon(
+                                imageVector = if (isTorchOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                                contentDescription = "Flashlight",
+                                tint = if (isTorchOn) CyberEmeraldBright else Color.White
+                            )
+                        }
+                    }
+
+                    // Camera Lens Switch (Rear/Front)
+                    IconButton(
+                        onClick = {
+                            cameraSelector = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+                                CameraSelector.DEFAULT_FRONT_CAMERA
+                            } else {
+                                CameraSelector.DEFAULT_BACK_CAMERA
+                            }
+                        },
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                            .testTag("switch_camera_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cameraswitch,
+                            contentDescription = "Switch Camera",
+                            tint = Color.White
+                        )
+                    }
+
+                    // Photo Gallery Barcode Scanner
+                    IconButton(
+                        onClick = { galleryLauncher.launch("image/*") },
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                            .testTag("gallery_picker_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Image,
+                            contentDescription = "Scan Image",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+
+            // Animated Inactivity Stream Timeout Alert Banner
+            AnimatedVisibility(
+                visible = lastTimeoutNotice != null,
+                enter = fadeIn() + scaleIn(initialScale = 0.92f),
+                exit = fadeOut() + scaleOut(targetScale = 0.92f),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 74.dp, start = 16.dp, end = 16.dp)
+            ) {
+                lastTimeoutNotice?.let { notice ->
+                    StreamTimeoutAlertCard(
+                        notice = notice,
+                        onDismiss = onDismissTimeoutNotice,
+                        onOpenSettings = {
+                            onDismissTimeoutNotice()
+                            showTimeoutSettingsDialog = true
+                        }
+                    )
+                }
+            }
+
+            // Quick Zoom Preset Buttons (Floating on Viewfinder)
+            Surface(
+                color = Color.Black.copy(alpha = 0.65f),
+                shape = RoundedCornerShape(100.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    availableZooms.forEach { zoom ->
+                        val isSelected = (currentZoomRatio - zoom).let { Math.abs(it) < 0.3f }
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (isSelected) CyberEmerald else Color.Transparent)
                             .clickable {
                                 currentZoomRatio = zoom
                                 cameraControl?.setZoomRatio(zoom)
                             },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "${zoom.toInt()}x",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = if (isSelected) Color.Black else Color.White
-                        )
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${zoom.toInt()}x",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (isSelected) Color.Black else Color.White
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        // Bottom HUD: QR Stream Frame Assembly & Real-Time Validation Matrix
-        if (scanProgress != null) {
-            FrameAssemblyPanel(
-                scanProgress = scanProgress,
-                streamRemainingSeconds = streamRemainingSeconds,
-                onResetScan = onResetScan,
-                onOpenTimeoutSettings = { showTimeoutSettingsDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp, start = 12.dp, end = 12.dp)
-            )
+            // Bottom HUD: QR Stream Frame Assembly & Real-Time Validation Matrix
+            if (scanProgress != null) {
+                FrameAssemblyPanel(
+                    scanProgress = scanProgress,
+                    streamRemainingSeconds = streamRemainingSeconds,
+                    onResetScan = onResetScan,
+                    onOpenTimeoutSettings = { showTimeoutSettingsDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp, start = 12.dp, end = 12.dp)
+                )
+            }
         }
     }
 
-    // Modal: Inactivity Stream Timeout Config Dialog
+    // Modal: Inactivity Stream Timeout & Tactile Feedback Config Dialog
     if (showTimeoutSettingsDialog) {
         StreamTimeoutSettingsDialog(
             currentTimeoutSeconds = streamTimeoutSeconds,
+            isHapticEnabled = isHapticEnabled,
+            onToggleHaptic = onToggleHaptic,
+            onTestHaptic = onTestHaptic,
             onSelectTimeoutSeconds = {
                 onSetStreamTimeoutSeconds(it)
-                showTimeoutSettingsDialog = false
             },
             onDismiss = { showTimeoutSettingsDialog = false }
         )
@@ -817,20 +788,17 @@ fun ScannerOverlay(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                        // Reticle mini progress track
-                        LinearProgressIndicator(
-                            progress = { scanProgress.progressFraction },
+                        // Reticle animated mini progress track with cyber sweep shimmer
+                        CompactStreamProgressBar(
+                            scanProgress = scanProgress,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = CyberEmeraldBright,
-                            trackColor = Color(0xFF1E293B)
+                                .height(6.dp)
                         )
 
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1120,125 +1088,18 @@ fun FrameAssemblyPanel(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Overall Progress Bar & Byte Metrics
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "${(scanProgress.progressFraction * 100).toInt()}% Assembled",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = CyberEmeraldBright
-                    )
-                    Text(
-                        text = "${FileUtils.formatBytes(scanProgress.assembledBytes)} of ${FileUtils.formatBytes(scanProgress.originalSize)}",
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
-                        color = Color.LightGray
-                    )
-                }
-
-                // Prominent Real-Time Speed & Throughput Indicator
-                Surface(
-                    color = CyberCyan.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyanBright.copy(alpha = 0.6f)),
-                    modifier = Modifier.testTag("transfer_speed_indicator")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Speed,
-                            contentDescription = "Transfer Speed Indicator",
-                            tint = CyberCyanBright,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = scanProgress.formattedTransferSpeed,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp
-                                ),
-                                color = CyberCyanBright
-                            )
-                            val fps = scanProgress.estimatedSpeedChunksPerSec
-                            if (fps > 0f) {
-                                Text(
-                                    text = "%.1f fps".format(fps),
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 9.sp
-                                    ),
-                                    color = Color.White.copy(alpha = 0.8f)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            LinearProgressIndicator(
-                progress = { scanProgress.progressFraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = CyberEmeraldBright,
-                trackColor = Color(0xFF1E293B)
+            // Animated QR Stream Decoding Progress Bar with Real-Time Throughput & ETA
+            AnimatedStreamProgressBar(
+                scanProgress = scanProgress,
+                height = 12.dp,
+                showDetailedMetrics = true,
+                showBufferStrip = true,
+                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Real-Time Transfer Efficiency & ETA Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.TrendingUp,
-                        contentDescription = null,
-                        tint = CyberEmeraldBright,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "Efficiency: ${scanProgress.transferEfficiencyScore}%",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp
-                        ),
-                        color = CyberEmeraldBright
-                    )
-                }
-
-                val eta = scanProgress.estimatedRemainingSeconds
-                if (eta != null) {
-                    Text(
-                        text = "ETA: ~${eta}s",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp
-                        ),
-                        color = CyberCyanBright
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Real-Time Frame Validation Status Chip
+            // Real-Time Transfer Efficiency & Frame Validation Chip
             Surface(
                 color = Color(0xFF1E293B).copy(alpha = 0.7f),
                 shape = RoundedCornerShape(8.dp),
@@ -1247,40 +1108,55 @@ fun FrameAssemblyPanel(
                 Row(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Shield,
-                        contentDescription = null,
-                        tint = CyberEmeraldBright,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = if (scanProgress.validationMessage.isNotBlank()) {
-                            scanProgress.validationMessage
-                        } else {
-                            "Validating incoming frame checksums (SHA-256)..."
-                        },
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        ),
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            tint = CyberEmeraldBright,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = if (scanProgress.validationMessage.isNotBlank()) {
+                                scanProgress.validationMessage
+                            } else {
+                                "Validating incoming frame checksums (SHA-256)..."
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            ),
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
 
-            // Missing Chunks Notice (if any)
-            if (scanProgress.missingIndices.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Waiting for: " + scanProgress.missingIndices.take(6).map { "#${it + 1}" }.joinToString(", ") +
-                            if (scanProgress.missingIndices.size > 6) " (+${scanProgress.missingIndices.size - 6} more)" else "",
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = CyberCyanBright
-                )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TrendingUp,
+                            contentDescription = null,
+                            tint = CyberEmeraldBright,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "${scanProgress.transferEfficiencyScore}% eff",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            ),
+                            color = CyberEmeraldBright
+                        )
+                    }
+                }
             }
         }
     }
@@ -1351,6 +1227,10 @@ fun CustomPassphraseDecryptionDialog(
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    val detected = remember(pending.progress.fileName, pending.progress.mimeType) {
+                        com.example.ui.components.FileTypeDetector.detect(pending.progress.fileName, pending.progress.mimeType)
+                    }
+
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1358,6 +1238,14 @@ fun CustomPassphraseDecryptionDialog(
                         ) {
                             Text("Payload:", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                             Text(pending.progress.fileName, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Type Preview:", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                            Text(detected.categoryName, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = detected.primaryColor)
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
@@ -1705,11 +1593,15 @@ fun StreamTimeoutAlertCard(
 }
 
 /**
- * Stream Inactivity Timeout Settings Modal
+ * Stream Inactivity Timeout & Tactile Feedback Settings Modal
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun StreamTimeoutSettingsDialog(
     currentTimeoutSeconds: Int,
+    isHapticEnabled: Boolean,
+    onToggleHaptic: (Boolean) -> Unit,
+    onTestHaptic: (Int) -> Unit,
     onSelectTimeoutSeconds: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1727,114 +1619,249 @@ fun StreamTimeoutSettingsDialog(
             border = androidx.compose.foundation.BorderStroke(1.5.dp, CyberCyanBright.copy(alpha = 0.6f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                // Header
+                item {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(CyberCyanBright.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Timer,
-                                contentDescription = null,
-                                tint = CyberCyanBright,
-                                modifier = Modifier.size(20.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(CyberCyanBright.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = CyberCyanBright,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Text(
+                                text = "Scanner & Feedback",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
                             )
                         }
 
-                        Text(
-                            text = "Stream Inactivity Timeout",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
-                        )
-                    }
-
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = Color.LightGray,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = Color.LightGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "If no new QR stream chunks are received within this period, the scanner will automatically clear the buffer and reset to prevent stale or incomplete frame state.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.LightGray
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    timeoutOptions.forEach { (seconds, label) ->
-                        val isSelected = currentTimeoutSeconds == seconds
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) CyberCyan.copy(alpha = 0.25f) else Color(0xFF1E293B),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (isSelected) CyberCyanBright else Color.White.copy(alpha = 0.15f)
-                            ),
+                // Tactile Haptic Vibration Toggle Section
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isHapticEnabled) CyberEmerald.copy(alpha = 0.12f) else Color(0xFF1E293B)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isHapticEnabled) CyberEmeraldBright.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.15f)
+                        )
+                    ) {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onSelectTimeoutSeconds(seconds) }
-                                .testTag("timeout_option_${seconds}s")
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Vibration,
+                                        contentDescription = null,
+                                        tint = if (isHapticEnabled) CyberEmeraldBright else Color.LightGray,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Tactile Vibration",
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = "Haptic ticks on frame scans & completion",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.LightGray
+                                        )
+                                    }
+                                }
+
+                                Switch(
+                                    checked = isHapticEnabled,
+                                    onCheckedChange = { onToggleHaptic(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = CyberEmeraldBright,
+                                        checkedTrackColor = CyberEmerald.copy(alpha = 0.5f)
                                     ),
-                                    color = if (isSelected) CyberCyanBright else Color.White
+                                    modifier = Modifier.testTag("switch_haptic_feedback")
+                                )
+                            }
+
+                            if (isHapticEnabled) {
+                                Text(
+                                    text = "Test Vibration Waveforms:",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = CyberCyanBright
                                 )
 
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "Selected",
-                                        tint = CyberCyanBright,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { onTestHaptic(0) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.testTag("test_haptic_tick")
+                                    ) {
+                                        Text("Scan Tick (12ms)", style = MaterialTheme.typography.labelSmall, color = CyberEmeraldBright)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = { onTestHaptic(1) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.testTag("test_haptic_stream_complete")
+                                    ) {
+                                        Text("Stream Done", style = MaterialTheme.typography.labelSmall, color = CyberCyanBright)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = { onTestHaptic(2) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.testTag("test_haptic_decrypt")
+                                    ) {
+                                        Text("Decrypted", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA78BFA))
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = { onTestHaptic(3) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.testTag("test_haptic_error")
+                                    ) {
+                                        Text("Error Buzz", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEF4444))
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                // Inactivity Stream Timeout Duration Section
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = null,
+                                tint = CyberCyanBright,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Stream Inactivity Timeout",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                        }
 
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
-                ) {
-                    Text("Done", fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text(
+                            text = "Auto-resets chunk reception buffer if no frames arrive within the chosen duration.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.LightGray
+                        )
+
+                        timeoutOptions.forEach { (seconds, label) ->
+                            val isSelected = currentTimeoutSeconds == seconds
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) CyberCyan.copy(alpha = 0.25f) else Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) CyberCyanBright else Color.White.copy(alpha = 0.15f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelectTimeoutSeconds(seconds) }
+                                    .testTag("timeout_option_${seconds}s")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        ),
+                                        color = if (isSelected) CyberCyanBright else Color.White
+                                    )
+
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Selected",
+                                            tint = CyberCyanBright,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Done Button
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                    ) {
+                        Text("Done", fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
                 }
             }
         }

@@ -6,12 +6,19 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.auth.BiometricAuthManager
+import com.example.auth.BiometricStatus
 import com.example.crypto.ChunkEnvelope
 import com.example.crypto.CryptoManager
 import com.example.crypto.EncryptedPayload
 import com.example.crypto.P2PTransferTicket
 import com.example.crypto.QrChunkProgress
 import com.example.data.AppDatabase
+import com.example.data.QrColorScheme
+import com.example.data.QrDensityPreset
+import com.example.data.QrErrorCorrectionLevel
+import com.example.data.QrModuleShape
+import com.example.data.ScannerContrastBoostMode
 import com.example.data.TeamKey
 import com.example.data.TeamKeyRepository
 import com.example.data.TransferMode
@@ -22,6 +29,7 @@ import com.example.p2p.LocalTransferClient
 import com.example.p2p.LocalTransferServer
 import com.example.p2p.NetworkUtils
 import com.example.qr.QrBitmapDecoder
+import com.example.qr.QrCodeGenerator
 import com.example.ui.theme.ThemeMode
 import com.example.util.FileUtils
 import com.example.util.HapticFeedbackHelper
@@ -66,7 +74,10 @@ data class SendPreparationState(
     val encryptedPayload: EncryptedPayload? = null,
     val qrChunks: List<String> = emptyList(),
     val isPreparing: Boolean = false,
-    val p2pTicket: P2PTransferTicket? = null
+    val p2pTicket: P2PTransferTicket? = null,
+    val densityPreset: QrDensityPreset = QrDensityPreset.STANDARD,
+    val sourceFilePath: String? = null,
+    val rawTextPreview: String? = null
 )
 
 class CipherViewModel(application: Application) : AndroidViewModel(application) {
@@ -97,8 +108,14 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     private val _isStreamPlaying = MutableStateFlow(true)
     val isStreamPlaying: StateFlow<Boolean> = _isStreamPlaying.asStateFlow()
 
-    private val _streamFps = MutableStateFlow(3) // 1 to 10 FPS
+    private val _streamFps = MutableStateFlow(4) // 1 to 15 FPS
     val streamFps: StateFlow<Int> = _streamFps.asStateFlow()
+
+    private val _densityPreset = MutableStateFlow(QrDensityPreset.STANDARD)
+    val densityPreset: StateFlow<QrDensityPreset> = _densityPreset.asStateFlow()
+
+    private val _loopCount = MutableStateFlow(1)
+    val loopCount: StateFlow<Int> = _loopCount.asStateFlow()
 
     private var streamLoopJob: Job? = null
 
@@ -167,6 +184,208 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     )
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
+    // QR Code Optical Customization Preferences
+    private val _qrColorScheme = MutableStateFlow(
+        try {
+            val savedName = sharedPreferences.getString("qr_color_scheme", QrColorScheme.HIGH_CONTRAST_MONO.name)
+            QrColorScheme.valueOf(savedName ?: QrColorScheme.HIGH_CONTRAST_MONO.name)
+        } catch (_: Exception) {
+            QrColorScheme.HIGH_CONTRAST_MONO
+        }
+    )
+    val qrColorScheme: StateFlow<QrColorScheme> = _qrColorScheme.asStateFlow()
+
+    private val _qrErrorCorrectionLevel = MutableStateFlow(
+        try {
+            val savedName = sharedPreferences.getString("qr_ecc_level", QrErrorCorrectionLevel.LEVEL_M.name)
+            QrErrorCorrectionLevel.valueOf(savedName ?: QrErrorCorrectionLevel.LEVEL_M.name)
+        } catch (_: Exception) {
+            QrErrorCorrectionLevel.LEVEL_M
+        }
+    )
+    val qrErrorCorrectionLevel: StateFlow<QrErrorCorrectionLevel> = _qrErrorCorrectionLevel.asStateFlow()
+
+    private val _qrModuleShape = MutableStateFlow(
+        try {
+            val savedName = sharedPreferences.getString("qr_module_shape", QrModuleShape.SQUARE.name)
+            QrModuleShape.valueOf(savedName ?: QrModuleShape.SQUARE.name)
+        } catch (_: Exception) {
+            QrModuleShape.SQUARE
+        }
+    )
+    val qrModuleShape: StateFlow<QrModuleShape> = _qrModuleShape.asStateFlow()
+
+    private val _isQrInverted = MutableStateFlow(
+        sharedPreferences.getBoolean("qr_inverted", false)
+    )
+    val isQrInverted: StateFlow<Boolean> = _isQrInverted.asStateFlow()
+
+    private val _scannerContrastMode = MutableStateFlow(
+        try {
+            val savedName = sharedPreferences.getString("scanner_contrast_mode", ScannerContrastBoostMode.STANDARD.name)
+            ScannerContrastBoostMode.valueOf(savedName ?: ScannerContrastBoostMode.STANDARD.name)
+        } catch (_: Exception) {
+            ScannerContrastBoostMode.STANDARD
+        }
+    )
+    val scannerContrastMode: StateFlow<ScannerContrastBoostMode> = _scannerContrastMode.asStateFlow()
+
+    private val _isScreenBrightnessBoostEnabled = MutableStateFlow(
+        sharedPreferences.getBoolean("qr_brightness_boost", true)
+    )
+    val isScreenBrightnessBoostEnabled: StateFlow<Boolean> = _isScreenBrightnessBoostEnabled.asStateFlow()
+
+    fun setQrColorScheme(scheme: QrColorScheme) {
+        _qrColorScheme.value = scheme
+        sharedPreferences.edit().putString("qr_color_scheme", scheme.name).apply()
+    }
+
+    fun setQrErrorCorrectionLevel(level: QrErrorCorrectionLevel) {
+        _qrErrorCorrectionLevel.value = level
+        sharedPreferences.edit().putString("qr_ecc_level", level.name).apply()
+
+        val current = _sendState.value ?: return
+        val encrypted = current.encryptedPayload ?: return
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val transferId = current.p2pTicket?.transferId ?: UUID.randomUUID().toString().substring(0, 8)
+            val newChunks = CryptoManager.createQrChunks(
+                encryptedBytes = encrypted.envelopeBytes,
+                fileName = current.fileName,
+                mimeType = current.mimeType,
+                originalSize = current.originalSize,
+                originalSha256 = encrypted.sha256Original,
+                transferId = transferId,
+                targetChunkSizeBytes = current.densityPreset.chunkSizeBytes
+            )
+            QrCodeGenerator.preloadChunks(newChunks, level.zxingLevel)
+            _sendState.value = current.copy(qrChunks = newChunks)
+            _currentChunkIndex.value = 0
+            _loopCount.value = 1
+        }
+    }
+
+    fun setQrModuleShape(shape: QrModuleShape) {
+        _qrModuleShape.value = shape
+        sharedPreferences.edit().putString("qr_module_shape", shape.name).apply()
+    }
+
+    fun toggleQrInverted() {
+        setQrInverted(!_isQrInverted.value)
+    }
+
+    fun setQrInverted(inverted: Boolean) {
+        _isQrInverted.value = inverted
+        sharedPreferences.edit().putBoolean("qr_inverted", inverted).apply()
+    }
+
+    fun setScannerContrastMode(mode: ScannerContrastBoostMode) {
+        _scannerContrastMode.value = mode
+        sharedPreferences.edit().putString("scanner_contrast_mode", mode.name).apply()
+    }
+
+    fun setScreenBrightnessBoostEnabled(enabled: Boolean) {
+        _isScreenBrightnessBoostEnabled.value = enabled
+        sharedPreferences.edit().putBoolean("qr_brightness_boost", enabled).apply()
+    }
+
+    // Tactile Haptic Feedback Preference
+    private val _isHapticEnabled = MutableStateFlow(HapticFeedbackHelper.isHapticEnabled(application))
+    val isHapticEnabled: StateFlow<Boolean> = _isHapticEnabled.asStateFlow()
+
+    fun setHapticEnabled(enabled: Boolean) {
+        _isHapticEnabled.value = enabled
+        HapticFeedbackHelper.setHapticEnabled(getApplication(), enabled)
+        viewModelScope.launch {
+            if (enabled) {
+                HapticFeedbackHelper.vibrateStreamCompleted(getApplication())
+                _toastEvent.emit("Tactile haptic feedback enabled")
+            } else {
+                _toastEvent.emit("Tactile haptic feedback disabled")
+            }
+        }
+    }
+
+    fun toggleHapticEnabled() {
+        setHapticEnabled(!_isHapticEnabled.value)
+    }
+
+    fun testHapticPattern(patternIndex: Int, context: Context) {
+        when (patternIndex) {
+            0 -> HapticFeedbackHelper.vibrateFrameDetected(context)
+            1 -> HapticFeedbackHelper.vibrateStreamCompleted(context)
+            2 -> HapticFeedbackHelper.vibrateDecryptionSuccess(context)
+            3 -> HapticFeedbackHelper.vibratePassphraseError(context)
+            4 -> HapticFeedbackHelper.vibrateTimeoutAlert(context)
+            else -> HapticFeedbackHelper.vibrateBiometricSuccess(context)
+        }
+    }
+
+    // Biometric Security & App Lock Preference
+    private val securityPrefs = application.getSharedPreferences("cipher_security_prefs", Context.MODE_PRIVATE)
+    private val _isBiometricEnabled = MutableStateFlow(securityPrefs.getBoolean("biometric_enabled", false))
+    val isBiometricEnabled: StateFlow<Boolean> = _isBiometricEnabled.asStateFlow()
+
+    private val _isAppLocked = MutableStateFlow(securityPrefs.getBoolean("biometric_enabled", false))
+    val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
+
+    private val _hasCustomPasscode = MutableStateFlow(!securityPrefs.getString("vault_pin", "").isNullOrBlank())
+    val hasCustomPasscode: StateFlow<Boolean> = _hasCustomPasscode.asStateFlow()
+
+    private val _biometricStatus = MutableStateFlow<BiometricStatus>(BiometricAuthManager.checkBiometricStatus(application))
+    val biometricStatus: StateFlow<BiometricStatus> = _biometricStatus.asStateFlow()
+
+    fun refreshBiometricStatus(context: Context) {
+        _biometricStatus.value = BiometricAuthManager.checkBiometricStatus(context)
+    }
+
+    fun setBiometricEnabled(enabled: Boolean) {
+        _isBiometricEnabled.value = enabled
+        securityPrefs.edit().putBoolean("biometric_enabled", enabled).apply()
+        viewModelScope.launch {
+            if (enabled) {
+                _toastEvent.emit("Biometric protection enabled")
+            } else {
+                _toastEvent.emit("Biometric protection disabled")
+            }
+        }
+    }
+
+    fun unlockApp() {
+        _isAppLocked.value = false
+    }
+
+    fun lockVault() {
+        _isAppLocked.value = true
+        viewModelScope.launch {
+            _toastEvent.emit("CipherQR Vault locked")
+        }
+    }
+
+    fun setAppPasscode(pin: String) {
+        val trimmed = pin.trim()
+        securityPrefs.edit().putString("vault_pin", trimmed).apply()
+        _hasCustomPasscode.value = trimmed.isNotBlank()
+        viewModelScope.launch {
+            if (trimmed.isNotBlank()) {
+                _toastEvent.emit("Security PIN set successfully")
+            } else {
+                _toastEvent.emit("Security PIN cleared")
+            }
+        }
+    }
+
+    fun verifyPasscode(pin: String): Boolean {
+        val stored = securityPrefs.getString("vault_pin", "") ?: ""
+        // Fallback default PIN if none set is 1234
+        val expected = if (stored.isNotBlank()) stored else "1234"
+        val matched = pin.trim() == expected
+        if (matched) {
+            unlockApp()
+        }
+        return matched
+    }
+
     fun setThemeMode(mode: ThemeMode) {
         _themeMode.value = mode
         sharedPreferences.edit().putString("app_theme_mode", mode.name).apply()
@@ -192,8 +411,37 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setStreamFps(fps: Int) {
-        _streamFps.value = fps.coerceIn(1, 10)
+        _streamFps.value = fps.coerceIn(1, 15)
         startStreamLoop()
+    }
+
+    fun setDensityPreset(preset: QrDensityPreset) {
+        _densityPreset.value = preset
+        val current = _sendState.value ?: return
+        val encrypted = current.encryptedPayload ?: return
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val transferId = current.p2pTicket?.transferId ?: UUID.randomUUID().toString().substring(0, 8)
+            val newChunks = CryptoManager.createQrChunks(
+                encryptedBytes = encrypted.envelopeBytes,
+                fileName = current.fileName,
+                mimeType = current.mimeType,
+                originalSize = current.originalSize,
+                originalSha256 = encrypted.sha256Original,
+                transferId = transferId,
+                targetChunkSizeBytes = preset.chunkSizeBytes
+            )
+
+            // Warm up QR generator cache in background
+            QrCodeGenerator.preloadChunks(newChunks)
+
+            _sendState.value = current.copy(
+                qrChunks = newChunks,
+                densityPreset = preset
+            )
+            _currentChunkIndex.value = 0
+            _loopCount.value = 1
+        }
     }
 
     fun toggleStreamPlaying() {
@@ -206,7 +454,38 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun selectChunkIndex(index: Int) {
-        _currentChunkIndex.value = index
+        val total = _sendState.value?.qrChunks?.size ?: 1
+        _currentChunkIndex.value = index.coerceIn(0, (total - 1).coerceAtLeast(0))
+    }
+
+    fun stepNextChunk() {
+        val chunks = _sendState.value?.qrChunks ?: return
+        if (chunks.isEmpty()) return
+        val current = _currentChunkIndex.value
+        val next = (current + 1) % chunks.size
+        if (next == 0 && chunks.size > 1) {
+            _loopCount.value = _loopCount.value + 1
+        }
+        _currentChunkIndex.value = next
+    }
+
+    fun stepPrevChunk() {
+        val chunks = _sendState.value?.qrChunks ?: return
+        if (chunks.isEmpty()) return
+        val current = _currentChunkIndex.value
+        val prev = if (current - 1 < 0) chunks.size - 1 else current - 1
+        _currentChunkIndex.value = prev
+    }
+
+    fun jumpToFirstChunk() {
+        _currentChunkIndex.value = 0
+    }
+
+    fun jumpToLastChunk() {
+        val chunks = _sendState.value?.qrChunks ?: return
+        if (chunks.isNotEmpty()) {
+            _currentChunkIndex.value = chunks.size - 1
+        }
     }
 
     private fun startStreamLoop() {
@@ -215,9 +494,14 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             while (isActive) {
                 val chunks = _sendState.value?.qrChunks
                 if (chunks != null && chunks.isNotEmpty() && _isStreamPlaying.value) {
-                    val delayMs = (1000L / _streamFps.value).coerceAtLeast(100L)
+                    val delayMs = (1000L / _streamFps.value).coerceAtLeast(60L)
                     delay(delayMs)
-                    _currentChunkIndex.value = (_currentChunkIndex.value + 1) % chunks.size
+                    val current = _currentChunkIndex.value
+                    val next = (current + 1) % chunks.size
+                    if (next == 0 && chunks.size > 1) {
+                        _loopCount.value = _loopCount.value + 1
+                    }
+                    _currentChunkIndex.value = next
                 } else {
                     delay(300)
                 }
@@ -284,7 +568,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             val transferId = UUID.randomUUID().toString().substring(0, 8)
             val teamName = _activeTeamKey.value?.teamName ?: "Secure E2E"
 
-            val targetChunkSize = if (rawBytes.size > 20000) 580 else 420
+            val currentPreset = _densityPreset.value
+            val targetChunkSize = currentPreset.chunkSizeBytes
             val chunks = CryptoManager.createQrChunks(
                 encryptedBytes = encrypted.envelopeBytes,
                 fileName = fileName,
@@ -294,6 +579,9 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 transferId = transferId,
                 targetChunkSizeBytes = targetChunkSize
             )
+
+            // Warm up QR generator cache in background
+            QrCodeGenerator.preloadChunks(chunks, _qrErrorCorrectionLevel.value.zxingLevel)
 
             val ip = NetworkUtils.getLocalIpAddress()
             val p2pTicket = P2PTransferTicket(
@@ -310,6 +598,21 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             )
 
             val safetyNum = CryptoManager.generateSafetyNumber(encrypted.sha256Original, key)
+            val textPreview = if (mimeType.startsWith("text/") || fileName.endsWith(".txt") || fileName.endsWith(".json") || fileName.endsWith(".csv") || fileName.endsWith(".kt") || fileName.endsWith(".md") || fileName.endsWith(".py")) {
+                try {
+                    String(rawBytes, Charsets.UTF_8).take(2000)
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+
+            val cachedFile = try {
+                FileUtils.saveBytesToInternalStorage(getApplication(), "preview_$fileName", rawBytes)
+            } catch (_: Exception) {
+                null
+            }
 
             val state = SendPreparationState(
                 fileName = fileName,
@@ -322,11 +625,15 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 encryptedPayload = encrypted,
                 qrChunks = chunks,
                 isPreparing = false,
-                p2pTicket = p2pTicket
+                p2pTicket = p2pTicket,
+                densityPreset = currentPreset,
+                sourceFilePath = cachedFile?.absolutePath,
+                rawTextPreview = textPreview
             )
 
             _sendState.value = state
             _currentChunkIndex.value = 0
+            _loopCount.value = 1
 
             // If P2P mode, automatically start local server
             if (mode == TransferMode.P2P_DIRECT) {
@@ -348,8 +655,15 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 encryptedSize = encrypted.envelopeBytes.size.toLong(),
                 isReceived = false,
                 transferMode = mode,
+                sourceInfo = "This Device (Sender)",
+                destinationInfo = when (mode) {
+                    TransferMode.P2P_DIRECT -> "P2P Receiver (${p2pTicket.hostIp})"
+                    TransferMode.QR_STREAM -> "QR Optical Receiver ($teamName)"
+                    TransferMode.QR_SECRET -> "Secret Receiver ($teamName)"
+                },
                 teamMemberName = "Me (Sender)",
                 teamName = teamName,
+                timestamp = System.currentTimeMillis(),
                 sha256Checksum = encrypted.sha256Original,
                 safetyNumber = safetyNum,
                 decryptedTextPreview = if (mimeType.startsWith("text/")) String(rawBytes, Charsets.UTF_8).take(200) else null
@@ -614,8 +928,11 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                     encryptedSize = assembledEnvelope.size.toLong(),
                     isReceived = true,
                     transferMode = TransferMode.QR_STREAM,
+                    sourceInfo = "Optical QR Stream Broadcast",
+                    destinationInfo = "Local Storage Vault (${_activeTeamKey.value?.teamName ?: "Team Vault"})",
                     teamMemberName = "Team Peer",
                     teamName = _activeTeamKey.value?.teamName ?: "Team Vault",
+                    timestamp = System.currentTimeMillis(),
                     status = TransferStatus.COMPLETED,
                     sha256Checksum = progress.originalSha256,
                     safetyNumber = safetyNum,
@@ -628,10 +945,12 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 _inspectedRecord.value = savedRecord
                 _scanProgress.value = null
                 _pendingDecryption.value = null
+                HapticFeedbackHelper.vibrateDecryptionSuccess(context)
                 _toastEvent.emit("Successfully assembled & decrypted ${progress.fileName}!")
             } else {
                 // Prompt user for custom passphrase
                 _pendingDecryption.value = PendingDecryptionState(progress, assembledEnvelope)
+                HapticFeedbackHelper.vibrateStreamCompleted(context)
                 _toastEvent.emit("All ${progress.totalChunks} chunks assembled! Enter passphrase to decrypt.")
             }
         }
@@ -659,8 +978,11 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                     encryptedSize = pending.assembledEnvelope.size.toLong(),
                     isReceived = true,
                     transferMode = TransferMode.QR_STREAM,
+                    sourceInfo = "Optical QR Stream Broadcast",
+                    destinationInfo = "Local Storage Vault (Ad-hoc Passphrase)",
                     teamMemberName = "Ad-hoc Peer",
                     teamName = "Custom Passphrase",
+                    timestamp = System.currentTimeMillis(),
                     status = TransferStatus.COMPLETED,
                     sha256Checksum = pending.progress.originalSha256,
                     safetyNumber = safetyNum,
@@ -673,8 +995,10 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 _inspectedRecord.value = savedRecord
                 _scanProgress.value = null
                 _pendingDecryption.value = null
+                HapticFeedbackHelper.vibrateDecryptionSuccess(context)
                 _toastEvent.emit("Decryption successful: ${pending.progress.fileName}")
             } catch (e: Exception) {
+                HapticFeedbackHelper.vibratePassphraseError(context)
                 _toastEvent.emit("Decryption failed: Invalid passphrase or corrupted key.")
             }
         }
@@ -716,8 +1040,11 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                             encryptedSize = ticket.encryptedSize,
                             isReceived = true,
                             transferMode = TransferMode.P2P_DIRECT,
+                            sourceInfo = "P2P Host (${ticket.hostIp}:${ticket.port})",
+                            destinationInfo = "Local Storage Vault (${ticket.teamName ?: "Direct P2P"})",
                             teamMemberName = "Team Peer (LAN)",
                             teamName = ticket.teamName ?: "Direct P2P",
+                            timestamp = System.currentTimeMillis(),
                             status = TransferStatus.COMPLETED,
                             sha256Checksum = ticket.sha256,
                             safetyNumber = safetyNum,
@@ -729,12 +1056,15 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                         val savedRecord = record.copy(id = id)
                         _scannedP2PTicket.value = null
                         _inspectedRecord.value = savedRecord
+                        HapticFeedbackHelper.vibrateTransferSuccess(context)
                         _toastEvent.emit("P2P File received & verified: ${ticket.fileName}")
                     } catch (e: Exception) {
+                        HapticFeedbackHelper.vibratePassphraseError(context)
                         _toastEvent.emit("Failed to decrypt P2P payload: ${e.localizedMessage}")
                     }
                 }
             }.onFailure { err ->
+                HapticFeedbackHelper.vibratePassphraseError(context)
                 _toastEvent.emit("Failed to download from ${ticket.hostIp}: ${err.localizedMessage}")
             }
         }
@@ -827,6 +1157,60 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 _inspectedRecord.value = null
             }
             _toastEvent.emit("Deleted ${record.fileName}")
+        }
+    }
+
+    fun deleteRecords(records: List<TransferRecord>) {
+        if (records.isEmpty()) return
+        viewModelScope.launch {
+            records.forEach { record ->
+                record.localFilePath?.let {
+                    try {
+                        File(it).delete()
+                    } catch (e: Exception) {
+                        // Ignore file delete errors
+                    }
+                }
+            }
+            transferRepository.deleteRecords(records)
+            if (_inspectedRecord.value != null && records.any { it.id == _inspectedRecord.value?.id }) {
+                _inspectedRecord.value = null
+            }
+            _toastEvent.emit("Deleted ${records.size} records")
+        }
+    }
+
+    fun purgeAllTransfers() {
+        viewModelScope.launch {
+            val all = transfers.value
+            all.forEach { r ->
+                r.localFilePath?.let {
+                    try { File(it).delete() } catch (_: Exception) {}
+                }
+            }
+            transferRepository.deleteRecords(all)
+            _inspectedRecord.value = null
+            _toastEvent.emit("All transfer history purged")
+        }
+    }
+
+    fun clearAppCache(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = FileUtils.clearTemporaryCache(context)
+            if (success) {
+                _toastEvent.emit("Temporary cache cleared")
+            } else {
+                _toastEvent.emit("Cache cleanup completed")
+            }
+        }
+    }
+
+    fun shareApk(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = FileUtils.shareAppApk(context)
+            if (!success) {
+                _toastEvent.emit("Could not extract APK file")
+            }
         }
     }
 

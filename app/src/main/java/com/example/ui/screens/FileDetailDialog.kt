@@ -1,7 +1,5 @@
 package com.example.ui.screens
 
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -45,8 +43,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -59,7 +55,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.TransferRecord
 import com.example.ui.components.CyberSecurityBadge
+import com.example.ui.components.FilePreviewCard
 import com.example.ui.components.SafetyNumberBox
+import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
 import com.example.ui.theme.CyberEmerald
 import com.example.ui.theme.CyberEmeraldBright
@@ -81,22 +79,8 @@ fun FileDetailDialog(
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-    val formattedDate = dateFormat.format(Date(record.timestamp))
-
-    // Check if decrypted file is an image
-    val imageBitmap = remember(record.localFilePath) {
-        val path = record.localFilePath
-        if (path != null && (record.mimeType.startsWith("image/") || record.fileName.endsWith(".jpg") || record.fileName.endsWith(".png") || record.fileName.endsWith(".webp"))) {
-            try {
-                BitmapFactory.decodeFile(path)?.asImageBitmap()
-            } catch (_: Exception) {
-                null
-            }
-        } else {
-            null
-        }
-    }
+    val formattedDate = com.example.util.DateFormatter.formatFullDateTime(record.timestamp)
+    val relativeDate = com.example.util.DateFormatter.formatRelativeTime(record.timestamp)
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -119,7 +103,13 @@ fun FileDetailDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CyberSecurityBadge(text = "AES-256-GCM VERIFIED")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CyberSecurityBadge(text = "AES-256-GCM VERIFIED")
+                        TransferStatusBadge(status = record.status)
+                    }
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
@@ -137,66 +127,28 @@ fun FileDetailDialog(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "${if (record.isReceived) "Received from ${record.teamMemberName}" else "Sent to ${record.teamName}"} • $formattedDate",
+                    text = "${if (record.isReceived) "Received from ${record.teamMemberName}" else "Sent to ${record.teamName}"} • $formattedDate ($relativeDate)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Image Preview if available
-                if (imageBitmap != null) {
-                    Image(
-                        bitmap = imageBitmap,
-                        contentDescription = "Decrypted Image Preview",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
-
-                // Text Preview if available
-                if (record.decryptedTextPreview != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "DECRYPTED PAYLOAD CONTENT",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = CyberEmeraldBright
-                                )
-                                IconButton(
-                                    onClick = { clipboardManager.setText(AnnotatedString(record.decryptedTextPreview)) },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp))
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = record.decryptedTextPreview,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                // Interactive File Preview (Image Thumbnail, Syntax Code Snippet, or Hex Inspection)
+                FilePreviewCard(
+                    fileName = record.fileName,
+                    mimeType = record.mimeType,
+                    fileSize = record.originalSize,
+                    filePath = record.localFilePath,
+                    rawTextPreview = record.decryptedTextPreview,
+                    onCopyContent = {
+                        android.widget.Toast.makeText(context, "Content copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
                     }
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
+                )
 
-                // Cryptographic Specs Card
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Cryptographic Specs & Metadata Card
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                     shape = RoundedCornerShape(12.dp),
@@ -204,12 +156,44 @@ fun FileDetailDialog(
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
-                            text = "CRYPTOGRAPHIC PROOFS",
+                            text = "METADATA & CRYPTOGRAPHIC PROOFS",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = CyberCyanBright
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Direction:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (record.isReceived) "Received" else "Sent", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = if (record.isReceived) CyberEmeraldBright else CyberCyanBright)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Source:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(record.sourceInfo, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Destination:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(record.destinationInfo, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Transfer Mode:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(record.transferMode.name, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween

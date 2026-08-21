@@ -13,14 +13,35 @@ interface TransferDao {
     @Query("SELECT * FROM transfer_records ORDER BY timestamp DESC")
     fun getAllTransfers(): Flow<List<TransferRecord>>
 
+    @Query("SELECT * FROM transfer_records WHERE isReceived = 0 ORDER BY timestamp DESC")
+    fun getSentTransfers(): Flow<List<TransferRecord>>
+
+    @Query("SELECT * FROM transfer_records WHERE isReceived = 1 ORDER BY timestamp DESC")
+    fun getReceivedTransfers(): Flow<List<TransferRecord>>
+
+    @Query("SELECT * FROM transfer_records WHERE isFavorite = 1 ORDER BY timestamp DESC")
+    fun getFavoriteTransfers(): Flow<List<TransferRecord>>
+
+    @Query("SELECT * FROM transfer_records WHERE transferMode = :mode ORDER BY timestamp DESC")
+    fun getTransfersByMode(mode: TransferMode): Flow<List<TransferRecord>>
+
+    @Query("SELECT * FROM transfer_records WHERE timestamp BETWEEN :startTime AND :endTime ORDER BY timestamp DESC")
+    fun getTransfersByDateRange(startTime: Long, endTime: Long): Flow<List<TransferRecord>>
+
+    @Query("SELECT * FROM transfer_records WHERE fileName LIKE '%' || :query || '%' OR teamName LIKE '%' || :query || '%' OR sourceInfo LIKE '%' || :query || '%' OR destinationInfo LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    fun searchTransfers(query: String): Flow<List<TransferRecord>>
+
     @Query("SELECT * FROM transfer_records WHERE id = :id LIMIT 1")
     suspend fun getTransferById(id: Long): TransferRecord?
 
     @Query("SELECT * FROM transfer_records WHERE transferId = :transferId LIMIT 1")
     suspend fun getTransferByTransferId(transferId: String): TransferRecord?
 
-    @Query("SELECT * FROM transfer_records WHERE isFavorite = 1 ORDER BY timestamp DESC")
-    fun getFavoriteTransfers(): Flow<List<TransferRecord>>
+    @Query("SELECT COUNT(*) FROM transfer_records")
+    fun getTransferCount(): Flow<Int>
+
+    @Query("SELECT SUM(originalSize) FROM transfer_records")
+    fun getTotalOriginalBytes(): Flow<Long?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransfer(record: TransferRecord): Long
@@ -31,8 +52,14 @@ interface TransferDao {
     @Delete
     suspend fun deleteTransfer(record: TransferRecord)
 
+    @Delete
+    suspend fun deleteTransfers(records: List<TransferRecord>)
+
     @Query("DELETE FROM transfer_records WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM transfer_records WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
 
     @Query("UPDATE transfer_records SET isFavorite = :isFav WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFav: Boolean)

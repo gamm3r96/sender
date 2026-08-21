@@ -1,5 +1,5 @@
 {
-  "name": "CipherQR",
+  "name": "Sender",
   "description": "Secure end-to-end encrypted file & secret transfers via animated QR code streams and local P2P. Developed by Elvis Gatwara (elvis-gatwara.vercel.app).",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -10,9 +10,23 @@ enum class TransferMode {
 }
 
 enum class TransferStatus {
+    SUCCESS,
     COMPLETED,
     FAILED,
-    IN_PROGRESS
+    PENDING,
+    IN_PROGRESS;
+
+    val isSuccess: Boolean get() = this == SUCCESS || this == COMPLETED
+    val isFailed: Boolean get() = this == FAILED
+    val isPending: Boolean get() = this == PENDING || this == IN_PROGRESS
+
+    val displayName: String
+        get() = when {
+            isSuccess -> "Success"
+            isFailed -> "Failed"
+            isPending -> "Pending"
+            else -> name
+        }
 }
 
 @Entity(tableName = "transfer_records")
@@ -26,6 +40,8 @@ data class TransferRecord(
     val encryptedSize: Long,
     val isReceived: Boolean, // true = Received from team member, false = Sent
     val transferMode: TransferMode,
+    val sourceInfo: String = "This Device", // Source device, peer, or network endpoint
+    val destinationInfo: String = "Team Vault", // Destination peer, team, or target node
     val teamMemberName: String = "Team Member",
     val teamName: String = "Default Team",
     val timestamp: Long = System.currentTimeMillis(),

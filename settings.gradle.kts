@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "CipherQR"
+rootProject.name = "Sender"
 
 include(":app")

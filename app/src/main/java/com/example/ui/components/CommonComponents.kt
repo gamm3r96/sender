@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -36,15 +37,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
@@ -54,7 +58,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.qr.QrCodeGenerator
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
 import com.example.ui.theme.CyberEmerald
@@ -128,33 +131,121 @@ fun QrCodeView(
     qrContent: String,
     modifier: Modifier = Modifier,
     sizePx: Int = 512,
-    darkColor: Int = android.graphics.Color.WHITE,
-    lightColor: Int = android.graphics.Color.TRANSPARENT
+    colorScheme: com.example.data.QrColorScheme = com.example.data.QrColorScheme.HIGH_CONTRAST_MONO,
+    errorCorrectionLevel: com.example.data.QrErrorCorrectionLevel = com.example.data.QrErrorCorrectionLevel.LEVEL_M,
+    moduleShape: com.example.data.QrModuleShape = com.example.data.QrModuleShape.SQUARE,
+    isInverted: Boolean = false,
+    darkColor: Int? = null,
+    lightColor: Int? = null
 ) {
-    val bitmap: Bitmap? = remember(qrContent, sizePx, darkColor, lightColor) {
-        QrCodeGenerator.generateQrBitmap(
-            content = qrContent,
-            size = sizePx,
-            primaryColor = darkColor,
-            backgroundColor = lightColor
-        )
+    var bitMatrix by remember { mutableStateOf<com.google.zxing.common.BitMatrix?>(null) }
+
+    LaunchedEffect(qrContent, sizePx, errorCorrectionLevel) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            if (qrContent.isNotEmpty()) {
+                try {
+                    val hints = java.util.EnumMap<com.google.zxing.EncodeHintType, Any>(com.google.zxing.EncodeHintType::class.java).apply {
+                        put(com.google.zxing.EncodeHintType.CHARACTER_SET, "UTF-8")
+                        put(com.google.zxing.EncodeHintType.ERROR_CORRECTION, errorCorrectionLevel.zxingLevel)
+                        put(com.google.zxing.EncodeHintType.MARGIN, 1)
+                    }
+                    val writer = com.google.zxing.qrcode.QRCodeWriter()
+                    bitMatrix = writer.encode(qrContent, com.google.zxing.BarcodeFormat.QR_CODE, 0, 0, hints)
+                } catch (_: Exception) {
+                    bitMatrix = null
+                }
+            } else {
+                bitMatrix = null
+            }
+        }
+    }
+
+    // Determine actual active colors
+    val actualDark = if (isInverted) {
+        darkColor?.let { Color(it) } ?: colorScheme.composeLightColor
+    } else {
+        darkColor?.let { Color(it) } ?: colorScheme.composeDarkColor
+    }
+
+    val actualLight = if (isInverted) {
+        lightColor?.let { Color(it) } ?: colorScheme.composeDarkColor
+    } else {
+        lightColor?.let { Color(it) } ?: colorScheme.composeLightColor
     }
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF0F172A))
-            .border(1.dp, CyberCyan.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            .background(actualLight)
+            .border(1.5.dp, actualDark.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
             .padding(12.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = "Encrypted QR Code",
+        val currentMatrix = bitMatrix
+        if (currentMatrix != null) {
+            Spacer(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .aspectRatio(1f)
                     .testTag("qr_code_image")
+                    .drawWithCache {
+                        val matrixWidth = currentMatrix.width
+                        val matrixHeight = currentMatrix.height
+                        val scale = minOf(size.width / matrixWidth, size.height / matrixHeight)
+                        val cornerRadius = scale * moduleShape.cornerRadiusFraction
+                        val isDots = moduleShape == com.example.data.QrModuleShape.DOTS
+
+                        val path = androidx.compose.ui.graphics.Path()
+                        for (y in 0 until matrixHeight) {
+                            for (x in 0 until matrixWidth) {
+                                if (currentMatrix.get(x, y)) {
+                                    val left = x * scale
+                                    val top = y * scale
+                                    val right = (x + 1) * scale
+                                    val bottom = (y + 1) * scale
+
+                                    if (isDots) {
+                                        val radius = scale * 0.45f
+                                        val centerX = left + scale / 2f
+                                        val centerY = top + scale / 2f
+                                        path.addOval(
+                                            androidx.compose.ui.geometry.Rect(
+                                                centerX - radius,
+                                                centerY - radius,
+                                                centerX + radius,
+                                                centerY + radius
+                                            )
+                                        )
+                                    } else if (cornerRadius > 0f) {
+                                        path.addRoundRect(
+                                            androidx.compose.ui.geometry.RoundRect(
+                                                left = left,
+                                                top = top,
+                                                right = right,
+                                                bottom = bottom,
+                                                radiusX = cornerRadius,
+                                                radiusY = cornerRadius
+                                            )
+                                        )
+                                    } else {
+                                        path.addRect(
+                                            androidx.compose.ui.geometry.Rect(
+                                                left = left,
+                                                top = top,
+                                                right = right,
+                                                bottom = bottom
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        onDrawBehind {
+                            drawRect(color = actualLight, size = size)
+                            drawPath(path = path, color = actualDark)
+                        }
+                    }
             )
         } else {
             Column(
