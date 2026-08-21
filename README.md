@@ -23,11 +23,12 @@
 - [📖 Comprehensive Step-by-Step Usage Guide](#-comprehensive-step-by-step-usage-guide)
   - [1. Optical Air-Gapped File & Secret Transmission](#1-optical-air-gapped-file--secret-transmission)
   - [2. Receiving & Reassembling the Animated QR Stream](#2-receiving--reassembling-the-animated-qr-stream)
-  - [3. Zero-Cloud Encrypted Local P2P Transfer (Large Files)](#3-zero-cloud-encrypted-local-p2p-transfer-large-files)
-  - [4. Team Keyrings & Biometric Cryptographic Security](#4-team-keyrings--biometric-cryptographic-security)
-  - [5. Optical Matrix Customization & Glare Compensation](#5-optical-matrix-customization--glare-compensation)
-  - [6. Offline Peer-to-Peer APK Provisioning](#6-offline-peer-to-peer-apk-provisioning)
-  - [7. Forensic Verification & Emergency Data Purge](#7-forensic-verification--emergency-data-purge)
+  - [3. Wi-Fi / Personal Hotspot Encrypted Transfer & LAN Discovery](#3-wi-fi--personal-hotspot-encrypted-transfer--lan-discovery)
+  - [4. Cross-Platform Web Browser Drop Portal (Zero Install)](#4-cross-platform-web-browser-drop-portal-zero-install)
+  - [5. Team Keyrings & Biometric Cryptographic Security](#5-team-keyrings--biometric-cryptographic-security)
+  - [6. Optical Matrix Customization & Glare Compensation](#6-optical-matrix-customization--glare-compensation)
+  - [7. Offline Peer-to-Peer APK Provisioning](#7-offline-peer-to-peer-apk-provisioning)
+  - [8. Forensic Verification & Emergency Data Purge](#8-forensic-verification--emergency-data-purge)
 - [📐 System Architecture & Cryptographic Pipeline](#-system-architecture--cryptographic-pipeline)
 - [🛠️ Tech Stack](#️-tech-stack)
 - [🚀 Building & Deployment](#-building--deployment)
@@ -120,29 +121,46 @@ Use this mode to transmit sensitive files or encrypted notes across physical spa
 
 ---
 
-### 3. Zero-Cloud Encrypted Local P2P Transfer (Large Files)
+### 3. Wi-Fi / Personal Hotspot Encrypted Transfer & LAN Discovery
 
-When files are too large for optical QR transmission (e.g. 50MB+ videos, system images, large databases), use the air-gapped Local P2P fallback.
+When files are large (e.g. 50MB–2GB+ videos, disk images, APKs, or full databases), switch seamlessly to high-speed **Air-Gapped Wi-Fi / Hotspot Mode**:
 
 ```
-[ Sender: Start Local Daemon ] ──> [ Displays Optical Ticket ] ──> [ Receiver: Scans Ticket ] ──> [ Fast Direct Transfer ]
+[ Sender: Start Wi-Fi Server ] ──> [ LAN Auto-Discovery / Optical Ticket ] ──> [ AES-256-GCM Direct Stream ]
 ```
 
-1. **Sender Setup**:
-   - Select your large file in the `Transmit` screen.
-   - Under Transfer Mode, select **Local P2P Direct**.
-   - Tap **Start Encrypted P2P Server**.
-   - An ephemeral, secure local HTTP daemon starts on the sender's device, displaying a one-time optical connection ticket QR code.
-2. **Receiver Capture**:
-   - The receiver opens `Scanner` and scans the connection ticket QR code.
-   - The receiver automatically connects directly to the sender's local socket.
-3. **Encrypted Download**:
-   - The file transfers directly over the local link at maximum hardware speeds.
-   - The daemon automatically self-terminates once the transfer completes.
+1. **Establish Offline Network**:
+   - Both devices connect to the same local Wi-Fi router, OR
+   - Device A turns on **Android Portable Hotspot** (via the quick in-app button) and Device B joins it. No internet connection is needed!
+2. **Sending Over Wi-Fi / Hotspot**:
+   - Select your file in the **Transmit** tab.
+   - Switch transfer mode to **Wi-Fi / Hotspot Direct**.
+   - Enter your encryption passphrase or select a Team Key.
+   - Tap **Start Encrypted Wi-Fi / Hotspot Server**.
+   - An ephemeral, ultra-fast server starts on port `8989`, broadcasting an optical connection ticket and LAN beacon.
+3. **Receiving Over Wi-Fi / Hotspot**:
+   - **Method A (Subnet Radar Scan)**: Open **Scanner** -> switch to the **Wi-Fi / Hotspot** tab -> tap **Scan Subnet**. Sender hosts appear automatically. Tap **Download & Decrypt**.
+   - **Method B (Optical Ticket)**: Aim the camera at the sender's screen to scan the connection ticket QR code for instantaneous zero-input pairing.
+   - **Method C (Manual IP / Port)**: Enter the sender's IP address (e.g. `192.168.43.1:8989`) and decrypt directly.
 
 ---
 
-### 4. Team Keyrings & Biometric Cryptographic Security
+### 4. Cross-Platform Web Browser Drop Portal (Zero Install)
+
+Transfer files to or from laptops, iPhones, Linux workstations, or Macs without installing any software on the target device:
+
+1. **Sender-to-Browser**:
+   - Start the Wi-Fi / Hotspot Server on Android.
+   - The app displays a direct web link (e.g. `http://192.168.43.1:8989/`).
+   - Open that URL in Chrome, Safari, or Firefox on any computer or phone connected to the same Wi-Fi/Hotspot to download the payload via a sleek cyber-styled web portal.
+2. **Browser-to-Android (Receiver Web Drop)**:
+   - On your Android phone, go to **Scanner** -> **Wi-Fi / Hotspot** -> tap **Start Receiver Web Drop Server**.
+   - The phone displays its receiver URL (e.g. `http://192.168.43.1:8990/`).
+   - Anyone on the LAN can open the browser page, drag & drop files into the phone, and they are saved directly into your phone's encrypted vault.
+
+---
+
+### 5. Team Keyrings & Biometric Cryptographic Security
 
 Eliminate the need to re-type long passwords during high-tempo field operations by configuring pre-shared cryptographic team keys.
 
@@ -157,7 +175,7 @@ Eliminate the need to re-type long passwords during high-tempo field operations 
 
 ---
 
-### 5. Optical Matrix Customization & Glare Compensation
+### 6. Optical Matrix Customization & Glare Compensation
 
 Optimize optical reading performance based on environmental lighting conditions.
 
@@ -171,7 +189,7 @@ Optimize optical reading performance based on environmental lighting conditions.
 
 ---
 
-### 6. Offline Peer-to-Peer APK Provisioning
+### 7. Offline Peer-to-Peer APK Provisioning
 
 Deploy Sender to new field devices without Google Play, app stores, or internet access:
 
@@ -181,7 +199,7 @@ Deploy Sender to new field devices without Google Play, app stores, or internet 
 
 ---
 
-### 7. Forensic Verification & Emergency Data Purge
+### 8. Forensic Verification & Emergency Data Purge
 
 1. **Audit Logs**:
    - Visit the `History / Audit` screen to review all past transmissions and receptions.

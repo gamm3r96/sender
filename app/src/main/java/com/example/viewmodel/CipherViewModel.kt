@@ -25,8 +25,10 @@ import com.example.data.TransferMode
 import com.example.data.TransferRecord
 import com.example.data.TransferRepository
 import com.example.data.TransferStatus
+import com.example.p2p.DiscoveredPeer
 import com.example.p2p.LocalTransferClient
 import com.example.p2p.LocalTransferServer
+import com.example.p2p.NetworkInfoState
 import com.example.p2p.NetworkUtils
 import com.example.qr.QrBitmapDecoder
 import com.example.qr.QrCodeGenerator
@@ -119,10 +121,26 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
 
     private var streamLoopJob: Job? = null
 
-    // P2P Local Server
+    // P2P / Wi-Fi / Hotspot Local Server
     val p2pServer = LocalTransferServer()
     val p2pServerStatus = p2pServer.serverState
     val p2pServerProgress = p2pServer.transferProgress
+    val p2pServerSpeed = p2pServer.transferSpeedBytesPerSec
+
+    // Network & Wi-Fi / Hotspot State
+    private val _networkInfo = MutableStateFlow(NetworkUtils.getNetworkInfo(application))
+    val networkInfo: StateFlow<NetworkInfoState> = _networkInfo.asStateFlow()
+
+    private val _discoveredPeers = MutableStateFlow<List<DiscoveredPeer>>(emptyList())
+    val discoveredPeers: StateFlow<List<DiscoveredPeer>> = _discoveredPeers.asStateFlow()
+
+    private val _isScanningPeers = MutableStateFlow(false)
+    val isScanningPeers: StateFlow<Boolean> = _isScanningPeers.asStateFlow()
+
+    // Standalone Receiver File Drop Server
+    val receiverServer = LocalTransferServer()
+    val receiverServerStatus = receiverServer.serverState
+    val receiverServerProgress = receiverServer.transferProgress
 
     // Receive Scanner State
     private val _scanProgress = MutableStateFlow<QrChunkProgress?>(null)
@@ -133,6 +151,9 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _p2pDownloadProgress = MutableStateFlow<Float>(0f)
     val p2pDownloadProgress: StateFlow<Float> = _p2pDownloadProgress.asStateFlow()
+
+    private val _p2pDownloadSpeed = MutableStateFlow<Long>(0L)
+    val p2pDownloadSpeed: StateFlow<Long> = _p2pDownloadSpeed.asStateFlow()
 
     private val _isDownloadingP2P = MutableStateFlow(false)
     val isDownloadingP2P: StateFlow<Boolean> = _isDownloadingP2P.asStateFlow()
@@ -642,7 +663,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                     fileName = fileName,
                     mimeType = mimeType,
                     encryptedPayload = encrypted.envelopeBytes,
-                    transferId = transferId
+                    transferId = transferId,
+                    sha256 = encrypted.sha256Original
                 )
             }
 
@@ -682,7 +704,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 fileName = current.fileName,
                 mimeType = current.mimeType,
                 encryptedPayload = current.encryptedPayload.envelopeBytes,
-                transferId = current.p2pTicket.transferId
+                transferId = current.p2pTicket.transferId,
+                sha256 = current.encryptedPayload.sha256Original
             )
         } else if (current.mode == TransferMode.P2P_DIRECT) {
             p2pServer.stopServer()
@@ -1008,16 +1031,200 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         _pendingDecryption.value = null
     }
 
+    fun refreshNetworkInfo(context: Context? = null) {
+        val ctx = context ?: getApplication()
+        _networkInfo.value = NetworkUtils.getNetworkInfo(ctx)
+    }
+
+    fun openWifiSettings(context: Context) {
+        NetworkUtils.openWifiSettings(context)
+    }
+
+    fun openHotspotSettings(context: Context) {
+        NetworkUtils.openHotspotSettings(context)
+    }
+
+    fun scanLanForPeers(context: Context? = null) {
+        if (_isScanningPeers.value) return
+        viewModelScope.launch {
+            _isScanningPeers.value = true
+            try {
+                val subnet = _networkInfo.value.subnetPrefix
+                val peers = LocalTransferClient.discoverPeers(subnetPrefix = subnet, port = 8989)
+                _discoveredPeers.value = peers
+                if (peers.isEmpty()) {
+                    _toastEvent.emit("No active Sender hosts detected on subnet $subnet")
+                } else {
+                    _toastEvent.emit("Discovered ${peers.size} active Sender host(s) on LAN!")
+                }
+            } catch (e: Exception) {
+                _toastEvent.emit("LAN scan error: ${e.localizedMessage}")
+            } finally {
+                _isScanningPeers.value = false
+            }
+        }
+    }
+
+    fun startReceiverFileDropServer(port: Int = 8990, context: Context) {
+        viewModelScope.launch {
+            receiverServer.startReceiverServer(port) { fileName, mimeType, fileBytes, clientIp ->
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        val savedFile = FileUtils.saveBytesToInternalStorage(context, fileName, fileBytes)
+                        val sha = CryptoManager.computeSha256(fileBytes)
+                        val record = TransferRecord(
+                            transferId = UUID.randomUUID().toString(),
+                            fileName = fileName,
+                            mimeType = mimeType,
+                            originalSize = fileBytes.size.toLong(),
+                            encryptedSize = fileBytes.size.toLong(),
+                            isReceived = true,
+                            transferMode = TransferMode.P2P_DIRECT,
+                            sourceInfo = "LAN Web Drop ($clientIp)",
+                            destinationInfo = "Local Storage Vault",
+                            teamMemberName = "LAN Client ($clientIp)",
+                            teamName = "Wi-Fi Web Drop",
+                            timestamp = System.currentTimeMillis(),
+                            status = TransferStatus.COMPLETED,
+                            sha256Checksum = sha,
+                            safetyNumber = CryptoManager.generateSafetyNumber(sha, "DIRECT_WEB_DROP"),
+                            localFilePath = savedFile.absolutePath,
+                            decryptedTextPreview = if (fileName.endsWith(".txt") || fileName.endsWith(".json")) String(fileBytes.take(200).toByteArray(), Charsets.UTF_8) else null
+                        )
+                        val id = transferRepository.insert(record)
+                        val savedRecord = record.copy(id = id)
+                        withContext(Dispatchers.Main) {
+                            _inspectedRecord.value = savedRecord
+                            HapticFeedbackHelper.vibrateTransferSuccess(context)
+                            _toastEvent.emit("File received via Web Drop: $fileName")
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            _toastEvent.emit("Failed to save received file: ${e.localizedMessage}")
+                        }
+                    }
+                }
+            }
+            refreshNetworkInfo(context)
+            _toastEvent.emit("Receiver Drop Portal active on port $port")
+        }
+    }
+
+    fun stopReceiverFileDropServer() {
+        receiverServer.stopServer()
+    }
+
+    fun downloadDiscoveredPeer(peer: DiscoveredPeer, customKeyOrPass: String? = null, context: Context) {
+        val ticket = P2PTransferTicket(
+            transferId = peer.transferId.ifBlank { UUID.randomUUID().toString() },
+            fileName = peer.fileName,
+            mimeType = peer.mimeType.ifBlank { "application/octet-stream" },
+            originalSize = peer.fileSize,
+            encryptedSize = peer.fileSize,
+            sha256 = peer.sha256,
+            hostIp = peer.ip,
+            port = peer.port,
+            encryptionKeyBase64 = customKeyOrPass ?: (_activeTeamKey.value?.passphraseOrKey ?: ""),
+            teamName = _activeTeamKey.value?.teamName ?: "Direct LAN"
+        )
+        downloadAndDecryptP2PTicket(ticket, context)
+    }
+
+    fun downloadManualIp(
+        hostIp: String,
+        port: Int = 8989,
+        passphraseOrKey: String,
+        context: Context
+    ) {
+        viewModelScope.launch {
+            _isDownloadingP2P.value = true
+            _p2pDownloadProgress.value = 0f
+            _p2pDownloadSpeed.value = 0L
+
+            val metadataResult = withContext(Dispatchers.IO) {
+                LocalTransferClient.fetchTransferMetadata(hostIp, port)
+            }
+            val metadata = metadataResult.getOrNull()
+
+            val fileName = metadata?.fileName ?: "lan_transfer.dat"
+            val mimeType = metadata?.mimeType ?: "application/octet-stream"
+            val transferId = metadata?.transferId ?: UUID.randomUUID().toString()
+
+            val result = LocalTransferClient.downloadEncryptedPayload(hostIp, port) { bytesRead, total, frac, speed ->
+                _p2pDownloadProgress.value = frac
+                _p2pDownloadSpeed.value = speed
+            }
+
+            _isDownloadingP2P.value = false
+            _p2pDownloadSpeed.value = 0L
+
+            result.onSuccess { encryptedEnvelope ->
+                withContext(Dispatchers.IO) {
+                    try {
+                        val keyToUse = passphraseOrKey.ifBlank { _activeTeamKey.value?.passphraseOrKey ?: "" }
+                        val decrypted = CryptoManager.decryptData(encryptedEnvelope, keyToUse)
+                        val computedSha = CryptoManager.computeSha256(decrypted)
+
+                        val savedFile = FileUtils.saveBytesToInternalStorage(context, fileName, decrypted)
+                        val safetyNum = CryptoManager.generateSafetyNumber(computedSha, keyToUse)
+                        val textPreview = if (mimeType.startsWith("text/")) String(decrypted, Charsets.UTF_8).take(200) else null
+
+                        val record = TransferRecord(
+                            transferId = transferId,
+                            fileName = fileName,
+                            mimeType = mimeType,
+                            originalSize = decrypted.size.toLong(),
+                            encryptedSize = encryptedEnvelope.size.toLong(),
+                            isReceived = true,
+                            transferMode = TransferMode.P2P_DIRECT,
+                            sourceInfo = "Direct Host ($hostIp:$port)",
+                            destinationInfo = "Local Storage Vault",
+                            teamMemberName = "LAN Peer",
+                            teamName = _activeTeamKey.value?.teamName ?: "Direct Wi-Fi / Hotspot",
+                            timestamp = System.currentTimeMillis(),
+                            status = TransferStatus.COMPLETED,
+                            sha256Checksum = computedSha,
+                            safetyNumber = safetyNum,
+                            localFilePath = savedFile.absolutePath,
+                            decryptedTextPreview = textPreview
+                        )
+
+                        val id = transferRepository.insert(record)
+                        val savedRecord = record.copy(id = id)
+                        withContext(Dispatchers.Main) {
+                            _inspectedRecord.value = savedRecord
+                            HapticFeedbackHelper.vibrateTransferSuccess(context)
+                            _toastEvent.emit("Direct LAN transfer complete: $fileName")
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            HapticFeedbackHelper.vibratePassphraseError(context)
+                            _toastEvent.emit("Failed to decrypt: Check passphrase or encryption key.")
+                        }
+                    }
+                }
+            }.onFailure { err ->
+                withContext(Dispatchers.Main) {
+                    HapticFeedbackHelper.vibratePassphraseError(context)
+                    _toastEvent.emit("Connection failed to $hostIp:$port (${err.localizedMessage})")
+                }
+            }
+        }
+    }
+
     fun downloadAndDecryptP2PTicket(ticket: P2PTransferTicket, context: Context) {
         viewModelScope.launch {
             _isDownloadingP2P.value = true
             _p2pDownloadProgress.value = 0f
+            _p2pDownloadSpeed.value = 0L
 
-            val result = LocalTransferClient.downloadEncryptedPayload(ticket.hostIp, ticket.port) { bytesRead, total, frac ->
+            val result = LocalTransferClient.downloadEncryptedPayload(ticket.hostIp, ticket.port) { bytesRead, total, frac, speed ->
                 _p2pDownloadProgress.value = frac
+                _p2pDownloadSpeed.value = speed
             }
 
             _isDownloadingP2P.value = false
+            _p2pDownloadSpeed.value = 0L
 
             result.onSuccess { encryptedEnvelope ->
                 withContext(Dispatchers.IO) {

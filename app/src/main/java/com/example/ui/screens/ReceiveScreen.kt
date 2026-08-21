@@ -1,9 +1,13 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraControl
@@ -59,15 +63,26 @@ import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
@@ -80,6 +95,8 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -133,6 +150,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import com.example.crypto.P2PTransferTicket
 import com.example.crypto.QrChunkProgress
+import com.example.p2p.DiscoveredPeer
+import com.example.p2p.LocalTransferServer
+import com.example.p2p.NetworkInfoState
 import com.example.qr.QrCodeScannerAnalyzer
 import com.example.ui.components.AnimatedStreamProgressBar
 import com.example.ui.components.CameraPermissionFlow
@@ -161,7 +181,13 @@ fun ReceiveScreen(
     scannedP2PTicket: P2PTransferTicket?,
     isDownloadingP2P: Boolean,
     p2pDownloadProgress: Float,
+    p2pDownloadSpeed: Long = 0L,
     pendingDecryption: PendingDecryptionState?,
+    networkInfo: NetworkInfoState = NetworkInfoState(),
+    discoveredPeers: List<DiscoveredPeer> = emptyList(),
+    isScanningPeers: Boolean = false,
+    receiverServerStatus: LocalTransferServer.ServerStatus = LocalTransferServer.ServerStatus.Stopped,
+    receiverServerProgress: Float = 0f,
     streamTimeoutSeconds: Int = 15,
     streamRemainingSeconds: Int? = null,
     lastTimeoutNotice: StreamTimeoutNotice? = null,
@@ -177,6 +203,14 @@ fun ReceiveScreen(
     onGalleryImageSelected: (android.graphics.Bitmap) -> Unit,
     onDecryptPendingPassphrase: (String) -> Unit,
     onDismissPendingDecryption: () -> Unit,
+    onScanLanPeers: () -> Unit = {},
+    onDownloadDiscoveredPeer: (DiscoveredPeer, String?) -> Unit = { _, _ -> },
+    onDownloadManualIp: (String, Int, String) -> Unit = { _, _, _ -> },
+    onStartReceiverServer: (Int) -> Unit = {},
+    onStopReceiverServer: () -> Unit = {},
+    onOpenWifiSettings: () -> Unit = {},
+    onOpenHotspotSettings: () -> Unit = {},
+    onRefreshNetworkInfo: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -222,16 +256,107 @@ fun ReceiveScreen(
         }
     }
 
-    CameraPermissionFlow(
-        cameraPermissionState = cameraPermissionState,
-        onOpenEducationalDialog = { showPermissionEducationalDialog = true },
+    var selectedReceiveTab by remember { mutableStateOf(0) } // 0 = Optical QR Scanner, 1 = Wi-Fi / Hotspot LAN
+
+    Column(
         modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
     ) {
+        // Top Receiver Mode Switcher
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (selectedReceiveTab == 0) CyberEmerald.copy(alpha = 0.25f) else Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (selectedReceiveTab == 0) CyberEmeraldBright else Color.White.copy(alpha = 0.15f)
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { selectedReceiveTab = 0 }
+                        .testTag("tab_receive_optical_qr")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QrCodeScanner,
+                            contentDescription = null,
+                            tint = if (selectedReceiveTab == 0) CyberEmeraldBright else Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Optical QR",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = if (selectedReceiveTab == 0) CyberEmeraldBright else Color.LightGray
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (selectedReceiveTab == 1) CyberCyan.copy(alpha = 0.25f) else Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (selectedReceiveTab == 1) CyberCyanBright else Color.White.copy(alpha = 0.15f)
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { selectedReceiveTab = 1 }
+                        .testTag("tab_receive_wifi_lan")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (networkInfo.isHotspotActive) Icons.Default.WifiTethering else Icons.Default.Wifi,
+                            contentDescription = null,
+                            tint = if (selectedReceiveTab == 1) CyberCyanBright else Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (networkInfo.isHotspotActive) "Hotspot LAN" else "Wi-Fi LAN",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = if (selectedReceiveTab == 1) CyberCyanBright else Color.LightGray
+                        )
+                    }
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
+                .weight(1f)
+                .fillMaxWidth()
         ) {
+            if (selectedReceiveTab == 0) {
+                CameraPermissionFlow(
+                    cameraPermissionState = cameraPermissionState,
+                    onOpenEducationalDialog = { showPermissionEducationalDialog = true },
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                    ) {
             // Live CameraX Viewfinder with Pinch-to-Zoom & Tap-to-Focus
             Box(
                 modifier = Modifier
@@ -266,6 +391,7 @@ fun ReceiveScreen(
                     factory = { ctx ->
                         val previewView = PreviewView(ctx).apply {
                             scaleType = PreviewView.ScaleType.FILL_CENTER
+                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                         }
                         previewViewInstance = previewView
                         val cameraExecutor = Executors.newSingleThreadExecutor()
@@ -461,7 +587,7 @@ fun ReceiveScreen(
             }
 
             // Animated Inactivity Stream Timeout Alert Banner
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = lastTimeoutNotice != null,
                 enter = fadeIn() + scaleIn(initialScale = 0.92f),
                 exit = fadeOut() + scaleOut(targetScale = 0.92f),
@@ -532,6 +658,30 @@ fun ReceiveScreen(
             }
         }
     }
+} else {
+    // Wi-Fi / Hotspot LAN Direct Receiver Hub
+    WifiDirectReceiverView(
+        networkInfo = networkInfo,
+        discoveredPeers = discoveredPeers,
+        isScanningPeers = isScanningPeers,
+        isDownloading = isDownloadingP2P,
+        downloadProgress = p2pDownloadProgress,
+        downloadSpeed = p2pDownloadSpeed,
+        receiverServerStatus = receiverServerStatus,
+        receiverServerProgress = receiverServerProgress,
+        onScanLanPeers = onScanLanPeers,
+        onDownloadDiscoveredPeer = onDownloadDiscoveredPeer,
+        onDownloadManualIp = onDownloadManualIp,
+        onStartReceiverServer = onStartReceiverServer,
+        onStopReceiverServer = onStopReceiverServer,
+        onOpenWifiSettings = onOpenWifiSettings,
+        onOpenHotspotSettings = onOpenHotspotSettings,
+        onRefreshNetworkInfo = onRefreshNetworkInfo,
+        modifier = Modifier.fillMaxSize()
+    )
+}
+}
+}
 
     // Modal: Inactivity Stream Timeout & Tactile Feedback Config Dialog
     if (showTimeoutSettingsDialog) {
@@ -1867,3 +2017,702 @@ fun StreamTimeoutSettingsDialog(
         }
     }
 }
+
+/**
+ * High-Tech Wi-Fi & Hotspot Direct Receiver Hub
+ * Enables LAN auto-discovery of peers, manual IP downloads, and local browser drop receiving.
+ */
+@Composable
+fun WifiDirectReceiverView(
+    networkInfo: NetworkInfoState,
+    discoveredPeers: List<DiscoveredPeer>,
+    isScanningPeers: Boolean,
+    isDownloading: Boolean,
+    downloadProgress: Float,
+    downloadSpeed: Long,
+    receiverServerStatus: LocalTransferServer.ServerStatus,
+    receiverServerProgress: Float,
+    onScanLanPeers: () -> Unit,
+    onDownloadDiscoveredPeer: (DiscoveredPeer, String?) -> Unit,
+    onDownloadManualIp: (String, Int, String) -> Unit,
+    onStartReceiverServer: (Int) -> Unit,
+    onStopReceiverServer: () -> Unit,
+    onOpenWifiSettings: () -> Unit,
+    onOpenHotspotSettings: () -> Unit,
+    onRefreshNetworkInfo: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var manualIp by remember { mutableStateOf("") }
+    var manualPort by remember { mutableStateOf("8989") }
+    var manualPassphrase by remember { mutableStateOf("") }
+
+    // Prefill manual IP subnet if available
+    val detectedIp = networkInfo.localIp
+    LaunchedEffect(detectedIp) {
+        if (manualIp.isEmpty() && detectedIp != null) {
+            val parts = detectedIp.split(".")
+            if (parts.size == 4) {
+                manualIp = "${parts[0]}.${parts[1]}.${parts[2]}."
+            }
+        }
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // 1. Network Status Banner
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("receiver_network_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (networkInfo.isConnected) CyberCyan.copy(alpha = 0.5f) else Color.Red.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (networkInfo.isConnected) CyberCyan.copy(alpha = 0.2f)
+                                        else Color.Red.copy(alpha = 0.2f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (networkInfo.isHotspotActive) Icons.Default.WifiTethering
+                                    else if (networkInfo.isConnected) Icons.Default.Wifi
+                                    else Icons.Default.WifiOff,
+                                    contentDescription = null,
+                                    tint = if (networkInfo.isConnected) CyberCyanBright else Color(0xFFEF4444),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Column {
+                                Text(
+                                    text = if (networkInfo.isHotspotActive) "Hotspot Tethering Active"
+                                    else if (networkInfo.isConnected) "Wi-Fi Connected: ${networkInfo.ssid ?: "LAN"}"
+                                    else "Offline / No Local Network",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (networkInfo.isConnected) "Local IP: ${networkInfo.localIp ?: "Detecting..."}"
+                                    else "Connect Wi-Fi or turn on Hotspot to receive files",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = if (networkInfo.isConnected) CyberEmeraldBright else Color.LightGray
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onRefreshNetworkInfo,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .testTag("refresh_network_receiver_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Network",
+                                tint = CyberCyanBright,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onOpenHotspotSettings,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("open_hotspot_receiver_btn"),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.WifiTethering, contentDescription = null, modifier = Modifier.size(14.dp), tint = CyberCyanBright)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Hotspot AP", style = MaterialTheme.typography.labelSmall, color = CyberCyanBright)
+                        }
+
+                        OutlinedButton(
+                            onClick = onOpenWifiSettings,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("open_wifi_receiver_btn"),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.LightGray)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Wi-Fi Settings", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. LAN Peer Auto-Discovery Radar
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("peer_radar_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1B2A)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyberEmerald.copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Radar,
+                                contentDescription = null,
+                                tint = CyberEmeraldBright,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Local Peer Radar",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                        }
+
+                        Button(
+                            onClick = onScanLanPeers,
+                            enabled = !isScanningPeers && networkInfo.isConnected,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberEmerald),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("scan_lan_peers_btn")
+                        ) {
+                            if (isScanningPeers) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.Black
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Scanning...", style = MaterialTheme.typography.labelSmall, color = Color.Black)
+                            } else {
+                                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Black)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Scan Subnet", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color.Black)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (discoveredPeers.isEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFF1E293B).copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = if (isScanningPeers) "Scanning 254 subnet IPs for Cipher transmitters..."
+                                    else "No active sender streams discovered yet.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.LightGray,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Ensure the sender has started P2P Direct Stream or Web Portal on the same network.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.Gray,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            discoveredPeers.forEach { peer ->
+                                DiscoveredPeerItemCard(
+                                    peer = peer,
+                                    isDownloading = isDownloading,
+                                    onDownload = { pass -> onDownloadDiscoveredPeer(peer, pass) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Direct Manual IP / Port Connect
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("manual_ip_connect_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131A2A)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Dns,
+                            contentDescription = null,
+                            tint = CyberCyanBright,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Manual Host IP Connect",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Connect directly to a sender IP when multicast peer broadcast is restricted by a router.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.LightGray
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = manualIp,
+                            onValueChange = { manualIp = it },
+                            label = { Text("Sender Host IP") },
+                            placeholder = { Text("192.168.43.1") },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyberCyanBright,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .weight(2f)
+                                .testTag("input_manual_ip")
+                        )
+
+                        OutlinedTextField(
+                            value = manualPort,
+                            onValueChange = { manualPort = it },
+                            label = { Text("Port") },
+                            placeholder = { Text("8989") },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyberCyanBright,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("input_manual_port")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = manualPassphrase,
+                        onValueChange = { manualPassphrase = it },
+                        label = { Text("Decryption Passphrase (Optional)") },
+                        placeholder = { Text("Leave blank if unencrypted") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyberEmeraldBright,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_manual_passphrase")
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            val port = manualPort.toIntOrNull() ?: 8989
+                            if (manualIp.isNotBlank()) {
+                                onDownloadManualIp(manualIp.trim(), port, manualPassphrase.trim())
+                            }
+                        },
+                        enabled = manualIp.isNotBlank() && !isDownloading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("manual_download_connect_btn"),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Connect & Stream", fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
+                }
+            }
+        }
+
+        // 4. Web Browser File Drop Portal (Receive mode on device)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("receiver_web_portal_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (receiverServerStatus is LocalTransferServer.ServerStatus.Running) CyberEmeraldBright else Color.White.copy(alpha = 0.15f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Public,
+                                contentDescription = null,
+                                tint = if (receiverServerStatus is LocalTransferServer.ServerStatus.Running) CyberEmeraldBright else Color.LightGray,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Web File Drop Server",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Receive files from any browser on LAN",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.LightGray
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = receiverServerStatus is LocalTransferServer.ServerStatus.Running,
+                            onCheckedChange = { active ->
+                                if (active) onStartReceiverServer(8990)
+                                else onStopReceiverServer()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = CyberEmeraldBright,
+                                checkedTrackColor = CyberEmerald.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("switch_receiver_web_server")
+                        )
+                    }
+
+                    if (receiverServerStatus is LocalTransferServer.ServerStatus.Running) {
+                        val dropUrl = "http://${networkInfo.localIp ?: "localhost"}:${receiverServerStatus.port}/"
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFF1E293B),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = dropUrl,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = CyberCyanBright
+                                )
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    IconButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            val clip = ClipData.newPlainText("Drop URL", dropUrl)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "Drop URL copied!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = CyberCyanBright, modifier = Modifier.size(16.dp))
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT, dropUrl)
+                                            }
+                                            context.startActivity(Intent.createChooser(intent, "Share Drop Portal URL"))
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Share, contentDescription = "Share", tint = CyberCyanBright, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+
+                        if (receiverServerProgress > 0f && receiverServerProgress < 1f) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Receiving upload: ${(receiverServerProgress * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = CyberEmeraldBright
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { receiverServerProgress },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = CyberEmeraldBright
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Active Download Speed HUD Card
+        if (isDownloading) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("downloading_hud_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF091F1A)),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, CyberEmeraldBright)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.5.dp,
+                                    color = CyberEmeraldBright
+                                )
+                                Text(
+                                    text = "Streaming P2P Direct Data...",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = CyberEmeraldBright
+                                )
+                            }
+
+                            Text(
+                                text = "${(downloadProgress * 100).toInt()}%",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = CyberEmeraldBright
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = CyberEmeraldBright
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Transfer Speed:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.Gray
+                            )
+                            Text(
+                                text = "${FileUtils.formatBytes(downloadSpeed)}/s",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = CyberCyanBright
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Individual Discovered Peer Card for LAN Radar
+ */
+@Composable
+fun DiscoveredPeerItemCard(
+    peer: DiscoveredPeer,
+    isDownloading: Boolean,
+    onDownload: (String?) -> Unit
+) {
+    var passphrase by remember { mutableStateOf("") }
+    var showPassphraseInput by remember { mutableStateOf(peer.encrypted) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("discovered_peer_${peer.ip}"),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(CyberEmerald.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.InsertDriveFile,
+                            contentDescription = null,
+                            tint = CyberEmeraldBright,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = peer.fileName,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${FileUtils.formatBytes(peer.fileSize)} • ${peer.ip}:${peer.port}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                            color = CyberCyanBright
+                        )
+                    }
+                }
+
+                if (peer.encrypted) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF7C3AED).copy(alpha = 0.3f),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFA78BFA))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = "Encrypted", tint = Color(0xFFA78BFA), modifier = Modifier.size(10.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("AES-256", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA78BFA))
+                        }
+                    }
+                }
+            }
+
+            if (showPassphraseInput) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = passphrase,
+                    onValueChange = { passphrase = it },
+                    label = { Text("Decryption Passphrase") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CyberEmeraldBright,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                onClick = { onDownload(passphrase.takeIf { it.isNotBlank() }) },
+                enabled = !isDownloading,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CyberEmerald)
+            ) {
+                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Download File", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = Color.Black)
+            }
+        }
+    }
+}
+

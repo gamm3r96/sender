@@ -44,6 +44,14 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TextSnippet
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiTethering
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -94,6 +102,7 @@ import com.example.data.QrModuleShape
 import com.example.data.TeamKey
 import com.example.data.TransferMode
 import com.example.p2p.LocalTransferServer
+import com.example.p2p.NetworkInfoState
 import com.example.ui.components.AnimatedPulseBadge
 import com.example.ui.components.AnimatedQrStreamGenerator
 import com.example.ui.components.CyberSecurityBadge
@@ -126,6 +135,8 @@ fun SendScreen(
     isQrInverted: Boolean = false,
     p2pServerStatus: LocalTransferServer.ServerStatus,
     p2pServerProgress: Float,
+    p2pServerSpeed: Long = 0L,
+    networkInfo: NetworkInfoState = NetworkInfoState(),
     onSelectFile: (Uri, TransferMode, String) -> Unit,
     onSendSecretText: (String, String, TransferMode, String) -> Unit,
     onSwitchMode: (TransferMode) -> Unit,
@@ -142,6 +153,9 @@ fun SendScreen(
     onSetModuleShape: (QrModuleShape) -> Unit = {},
     onToggleInverted: () -> Unit = {},
     onSelectTeamKey: (TeamKey) -> Unit,
+    onOpenWifiSettings: () -> Unit = {},
+    onOpenHotspotSettings: () -> Unit = {},
+    onRefreshNetworkInfo: () -> Unit = {},
     onClearState: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -732,7 +746,7 @@ fun SendScreen(
                     )
                 }
             } else {
-                // P2P LOCAL NETWORK DIRECT TRANSFER HOST CARD
+                // P2P / WI-FI / HOTSPOT DIRECT TRANSFER HUB
                 item {
                     Card(
                         modifier = Modifier
@@ -740,30 +754,93 @@ fun SendScreen(
                             .testTag("p2p_host_card"),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.5f))
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, CyberCyanBright.copy(alpha = 0.6f))
                     ) {
                         Column(
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(18.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            // Header
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Wifi, contentDescription = null, tint = CyberCyanBright, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Local P2P Direct Room",
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                    )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(CyberCyanBright.copy(alpha = 0.15f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = if (networkInfo.isHotspotActive) Icons.Default.WifiTethering else Icons.Default.Wifi,
+                                            contentDescription = null,
+                                            tint = CyberCyanBright,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    Column {
+                                        Text(
+                                            text = if (networkInfo.isHotspotActive) "Hotspot Access Point Hub" else "Wi-Fi Direct P2P Room",
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = if (networkInfo.isHotspotActive) "Mobile AP: ${networkInfo.ipAddress}" else "LAN IP: ${networkInfo.ipAddress}",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                            color = CyberCyanBright
+                                        )
+                                    }
                                 }
-                                AnimatedPulseBadge(text = "HOSTING", color = CyberCyanBright)
+                                AnimatedPulseBadge(text = "HOSTING", color = CyberEmeraldBright)
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
 
+                            // Quick Settings & Refresh Network Bar
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = onOpenHotspotSettings,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.WifiTethering, contentDescription = null, modifier = Modifier.size(14.dp), tint = CyberCyanBright)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Hotspot AP", style = MaterialTheme.typography.labelSmall, color = CyberCyanBright)
+                                }
+
+                                OutlinedButton(
+                                    onClick = onOpenWifiSettings,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(14.dp), tint = CyberEmeraldBright)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Wi-Fi Settings", style = MaterialTheme.typography.labelSmall, color = CyberEmeraldBright)
+                                }
+
+                                IconButton(
+                                    onClick = onRefreshNetworkInfo,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.LightGray, modifier = Modifier.size(18.dp))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Interactive High-Contrast QR Code Ticket
                             val p2pQrTicket = sendState.p2pTicket?.let { CryptoManager.createP2PTicketQr(it) } ?: ""
                             QrCodeView(
                                 qrContent = p2pQrTicket,
@@ -773,45 +850,159 @@ fun SendScreen(
                                     .clickable { isFullScreenQr = true }
                             )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
 
                             Text(
-                                text = "Scan this ticket on the receiver device to start direct LAN transfer.",
+                                text = "Scan this ticket on the receiver device to start direct ultra high-speed LAN transfer.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
                             )
 
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
-                            // P2P Live Progress
+                            // Web Browser Direct Download Link Banner
+                            val webPortalUrl = "http://${networkInfo.ipAddress}:8989"
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.3f))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Web Browser Direct Download:",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.LightGray
+                                        )
+                                        Text(
+                                            text = webPortalUrl,
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold
+                                            ),
+                                            color = CyberCyanBright
+                                        )
+                                    }
+
+                                    Row {
+                                        IconButton(
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(webPortalUrl))
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL", tint = CyberCyanBright, modifier = Modifier.size(16.dp))
+                                        }
+
+                                        IconButton(
+                                            onClick = {
+                                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(android.content.Intent.EXTRA_TEXT, "Download file via local Wi-Fi: $webPortalUrl")
+                                                }
+                                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Download Link"))
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(Icons.Default.Share, contentDescription = "Share URL", tint = CyberEmeraldBright, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // P2P Live Progress & Speed Meter
                             when (p2pServerStatus) {
                                 is LocalTransferServer.ServerStatus.Running -> {
-                                    Text(
-                                        text = "Server active at http://${p2pServerStatus.hostIp}:${p2pServerStatus.port}",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                                        color = CyberCyanBright
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(CyberEmeraldBright)
+                                        )
+                                        Text(
+                                            text = "Awaiting connection on port ${p2pServerStatus.port}...",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                            color = CyberEmeraldBright
+                                        )
+                                    }
                                 }
                                 is LocalTransferServer.ServerStatus.ClientConnected -> {
-                                    Text(
-                                        text = "Client downloading: ${p2pServerStatus.clientIp}",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = CyberEmeraldBright
-                                    )
-                                    LinearProgressIndicator(
-                                        progress = { p2pServerProgress },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 8.dp)
-                                    )
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Transferring to ${p2pServerStatus.clientIp}",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = CyberEmeraldBright
+                                            )
+                                            if (p2pServerSpeed > 0) {
+                                                Text(
+                                                    text = "${FileUtils.formatBytes(p2pServerSpeed)}/s",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Bold
+                                                    ),
+                                                    color = CyberCyanBright
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        LinearProgressIndicator(
+                                            progress = { p2pServerProgress },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(8.dp)
+                                                .clip(RoundedCornerShape(4.dp)),
+                                            color = CyberEmeraldBright,
+                                            trackColor = Color(0xFF1E293B)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "${(p2pServerProgress * 100).toInt()}% completed",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.LightGray
+                                        )
+                                    }
                                 }
                                 is LocalTransferServer.ServerStatus.Completed -> {
-                                    Text(
-                                        text = "Transfer completed successfully!",
-                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = CyberEmeraldBright
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = CyberEmerald.copy(alpha = 0.15f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, CyberEmeraldBright.copy(alpha = 0.5f))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(Icons.Default.Check, contentDescription = null, tint = CyberEmeraldBright, modifier = Modifier.size(16.dp))
+                                            Text(
+                                                text = "Transfer completed successfully!",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = CyberEmeraldBright
+                                            )
+                                        }
+                                    }
                                 }
                                 is LocalTransferServer.ServerStatus.Error -> {
                                     Text(

@@ -131,11 +131,19 @@ fun CipherApp(viewModel: CipherViewModel) {
     val loopCount by viewModel.loopCount.collectAsStateWithLifecycle()
     val p2pServerStatus by viewModel.p2pServerStatus.collectAsStateWithLifecycle()
     val p2pServerProgress by viewModel.p2pServerProgress.collectAsStateWithLifecycle()
+    val p2pServerSpeed by viewModel.p2pServerSpeed.collectAsStateWithLifecycle()
+
+    val networkInfo by viewModel.networkInfo.collectAsStateWithLifecycle()
+    val discoveredPeers by viewModel.discoveredPeers.collectAsStateWithLifecycle()
+    val isScanningPeers by viewModel.isScanningPeers.collectAsStateWithLifecycle()
+    val receiverServerStatus by viewModel.receiverServerStatus.collectAsStateWithLifecycle()
+    val receiverServerProgress by viewModel.receiverServerProgress.collectAsStateWithLifecycle()
 
     val scanProgress by viewModel.scanProgress.collectAsStateWithLifecycle()
     val scannedP2PTicket by viewModel.scannedP2PTicket.collectAsStateWithLifecycle()
     val isDownloadingP2P by viewModel.isDownloadingP2P.collectAsStateWithLifecycle()
     val p2pDownloadProgress by viewModel.p2pDownloadProgress.collectAsStateWithLifecycle()
+    val p2pDownloadSpeed by viewModel.p2pDownloadSpeed.collectAsStateWithLifecycle()
     val pendingDecryption by viewModel.pendingDecryption.collectAsStateWithLifecycle()
     val streamTimeoutSeconds by viewModel.streamTimeoutSeconds.collectAsStateWithLifecycle()
     val streamRemainingSeconds by viewModel.streamRemainingSeconds.collectAsStateWithLifecycle()
@@ -363,6 +371,8 @@ fun CipherApp(viewModel: CipherViewModel) {
                             isQrInverted = isQrInverted,
                             p2pServerStatus = p2pServerStatus,
                             p2pServerProgress = p2pServerProgress,
+                            p2pServerSpeed = p2pServerSpeed,
+                            networkInfo = networkInfo,
                             onSelectFile = { uri, mode, pass ->
                                 viewModel.prepareFileForSending(context, uri, mode, pass)
                             },
@@ -383,7 +393,10 @@ fun CipherApp(viewModel: CipherViewModel) {
                             onSetModuleShape = { viewModel.setQrModuleShape(it) },
                             onToggleInverted = { viewModel.toggleQrInverted() },
                             onSelectTeamKey = { viewModel.setActiveTeamKey(it) },
-                            onClearState = { viewModel.clearSendState() }
+                            onClearState = { viewModel.clearSendState() },
+                            onOpenWifiSettings = { viewModel.openWifiSettings(context) },
+                            onOpenHotspotSettings = { viewModel.openHotspotSettings(context) },
+                            onRefreshNetworkInfo = { viewModel.refreshNetworkInfo() }
                         )
                     }
 
@@ -393,11 +406,17 @@ fun CipherApp(viewModel: CipherViewModel) {
                             scannedP2PTicket = scannedP2PTicket,
                             isDownloadingP2P = isDownloadingP2P,
                             p2pDownloadProgress = p2pDownloadProgress,
+                            p2pDownloadSpeed = p2pDownloadSpeed,
                             pendingDecryption = pendingDecryption,
                             streamTimeoutSeconds = streamTimeoutSeconds,
                             streamRemainingSeconds = streamRemainingSeconds,
                             lastTimeoutNotice = lastTimeoutNotice,
                             isHapticEnabled = isHapticEnabled,
+                            networkInfo = networkInfo,
+                            discoveredPeers = discoveredPeers,
+                            isScanningPeers = isScanningPeers,
+                            receiverServerStatus = receiverServerStatus,
+                            receiverServerProgress = receiverServerProgress,
                             onToggleHaptic = { viewModel.setHapticEnabled(it) },
                             onTestHaptic = { viewModel.testHapticPattern(it, context) },
                             onQrCodeDetected = { rawText ->
@@ -416,7 +435,21 @@ fun CipherApp(viewModel: CipherViewModel) {
                             onDecryptPendingPassphrase = { pass ->
                                 viewModel.decryptPendingWithPassphrase(pass, context)
                             },
-                            onDismissPendingDecryption = { viewModel.dismissPendingDecryption() }
+                            onDismissPendingDecryption = { viewModel.dismissPendingDecryption() },
+                            onScanLanPeers = { viewModel.scanLanForPeers(context) },
+                            onDownloadDiscoveredPeer = { peer, pass ->
+                                viewModel.downloadDiscoveredPeer(peer, pass, context)
+                            },
+                            onDownloadManualIp = { ip, port, pass ->
+                                viewModel.downloadManualIp(ip, port, pass, context)
+                            },
+                            onStartReceiverServer = { port ->
+                                viewModel.startReceiverFileDropServer(port, context)
+                            },
+                            onStopReceiverServer = { viewModel.stopReceiverFileDropServer() },
+                            onOpenWifiSettings = { viewModel.openWifiSettings(context) },
+                            onOpenHotspotSettings = { viewModel.openHotspotSettings(context) },
+                            onRefreshNetworkInfo = { viewModel.refreshNetworkInfo() }
                         )
                     }
 
