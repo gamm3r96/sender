@@ -4,7 +4,8 @@
 [![Language](https://img.shields.io/badge/Language-Kotlin%202.0-7F52FF?style=flat&logo=kotlin)](https://kotlinlang.org)
 [![UI](https://img.shields.io/badge/UI-Jetpack%20Compose%20M3-4285F4?style=flat&logo=jetpackcompose)](https://developer.android.com/jetpack/compose)
 [![Encryption](https://img.shields.io/badge/Encryption-AES--256--GCM-00E5FF?style=flat)](https://en.wikipedia.org/wiki/Galois/Counter_Mode)
-[![Author](https://img.shields.io/badge/Developer-Elvis%20Gatwara-10B981?style=flat)](https://elvis-gatwara.vercel.app)
+[![Author](https://img.shields.io/badge/Developer-Elvis%20Gatwara%20(%40gamm3r96)-10B981?style=flat&logo=github)](https://github.com/gamm3r96)
+[![Portfolio](https://img.shields.io/badge/Portfolio-elvis--gatwara.vercel.app-blue?style=flat)](https://elvis-gatwara.vercel.app)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
@@ -243,7 +244,7 @@ Deploy Sender to new field devices without Google Play, app stores, or internet 
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/sender.git
+git clone https://github.com/gamm3r96/sender.git
 cd sender
 
 # Assemble debug APK
@@ -255,9 +256,9 @@ cd sender
 
 ---
 
-## 💻 Push to Your GitHub Account
+## 💻 Push to Your GitHub Account (@gamm3r96)
 
-To push this repository to your personal GitHub account:
+To push this repository to your personal GitHub account (`@gamm3r96`):
 
 ```bash
 # 1. Initialize git (if not already initialized)
@@ -273,7 +274,7 @@ git commit -m "feat: complete Sender air-gapped encrypted transfer suite with do
 git branch -M main
 
 # 5. Add your remote repository URL
-git remote add origin https://github.com/<YOUR_GITHUB_USERNAME>/sender.git
+git remote add origin https://github.com/gamm3r96/sender.git
 
 # 6. Push to GitHub
 git push -u origin main
@@ -283,7 +284,8 @@ git push -u origin main
 
 ## 👨‍💻 Author & Contact
 
-**Elvis Gatwara**
+**Elvis Gatwara** (`@gamm3r96`)
+- 🐙 **GitHub**: [@gamm3r96](https://github.com/gamm3r96)
 - 🌐 **Portfolio & Web**: [elvis-gatwara.vercel.app](https://elvis-gatwara.vercel.app)
 - ✉️ **Email**: [elvisgatwara@gmail.com](mailto:elvisgatwara@gmail.com)
 

@@ -7,7 +7,7 @@ Thank you for your interest in contributing to **Sender**! We welcome contributi
 1. **Fork the repository** on GitHub.
 2. **Clone your fork**:
    ```bash
-   git clone https://github.com/<your-username>/sender.git
+   git clone https://github.com/gamm3r96/sender.git
    cd sender
    ```
 3. **Create a feature branch**:
@@ -29,6 +29,6 @@ Thank you for your interest in contributing to **Sender**! We welcome contributi
 
 ## Contact & Author
 
-- **Elvis Gatwara**
+- **Elvis Gatwara** ([@gamm3r96](https://github.com/gamm3r96))
 - **Website**: [elvis-gatwara.vercel.app](https://elvis-gatwara.vercel.app)
 - **Email**: [elvisgatwara@gmail.com](mailto:elvisgatwara@gmail.com)
