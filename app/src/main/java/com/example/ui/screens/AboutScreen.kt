@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -125,6 +126,8 @@ fun AboutScreen(
     val developerName = "Elvis Gatwara"
     val developerEmail = "elvisgatwara@gmail.com"
     val developerPortfolioUrl = "https://elvis-gatwara.vercel.app"
+    val developerKofiUrl = "https://ko-fi.com/R6R71ERSUM"
+    val developerGithubUrl = "https://github.com/gamm3r96"
     val appShareLink = "https://ais-pre-kk2pxe7rlwk26tksqnmrfu-804296692629.europe-west2.run.app"
 
     var isWebWindowExpanded by remember { mutableStateOf(true) }
@@ -620,6 +623,121 @@ fun AboutScreen(
                                 imageVector = Icons.Default.OpenInNew,
                                 contentDescription = "Open Website",
                                 tint = CyberCyanBright,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // GitHub Profile Card Row
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, CyberViolet.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { openInExternalBrowser(developerGithubUrl) }
+                            .testTag("about_github_url_button")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Code,
+                                    contentDescription = null,
+                                    tint = CyberVioletBright,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "GitHub Profile & Projects",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "github.com/gamm3r96",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontFamily = FontFamily.Monospace
+                                        ),
+                                        color = CyberVioletBright
+                                    )
+                                }
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.OpenInNew,
+                                contentDescription = "Open GitHub",
+                                tint = CyberVioletBright,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // Ko-fi Support & Buy Me a Coffee Card Row
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFF5E5B).copy(alpha = 0.12f),
+                        border = BorderStroke(1.5.dp, Color(0xFFFF5E5B).copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { openInExternalBrowser(developerKofiUrl) }
+                            .testTag("about_kofi_button")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFFF5E5B).copy(alpha = 0.2f),
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Favorite,
+                                            contentDescription = "Ko-fi",
+                                            tint = Color(0xFFFF5E5B),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Column {
+                                    Text(
+                                        text = "Support Development",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "☕ Buy Me a Coffee on Ko-fi",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = Color(0xFFFF5E5B)
+                                    )
+                                }
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.OpenInNew,
+                                contentDescription = "Open Ko-fi",
+                                tint = Color(0xFFFF5E5B),
                                 modifier = Modifier.size(18.dp)
                             )
                         }

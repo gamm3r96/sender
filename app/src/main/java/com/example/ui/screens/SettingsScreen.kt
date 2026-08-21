@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Key
@@ -1016,6 +1019,39 @@ fun SettingsScreen(
                         ) {
                             Text("Developer Portal", style = MaterialTheme.typography.labelSmall, color = CyberVioletBright)
                         }
+                    }
+
+                    // Ko-fi Support Button
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://ko-fi.com/R6R71ERSUM"))
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "Unable to open browser", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_kofi_support_btn"),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFFFF5E5B).copy(alpha = 0.6f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color(0xFFFF5E5B).copy(alpha = 0.08f)
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = "Ko-fi",
+                            tint = Color(0xFFFF5E5B),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "☕ Buy Me a Coffee on Ko-fi",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color(0xFFFF5E5B)
+                        )
                     }
                 }
             }

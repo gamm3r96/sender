@@ -6,6 +6,7 @@
 [![Encryption](https://img.shields.io/badge/Encryption-AES--256--GCM-00E5FF?style=flat)](https://en.wikipedia.org/wiki/Galois/Counter_Mode)
 [![Author](https://img.shields.io/badge/Developer-Elvis%20Gatwara%20(%40gamm3r96)-10B981?style=flat&logo=github)](https://github.com/gamm3r96)
 [![Portfolio](https://img.shields.io/badge/Portfolio-elvis--gatwara.vercel.app-blue?style=flat)](https://elvis-gatwara.vercel.app)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/R6R71ERSUM)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
@@ -306,6 +307,12 @@ git push -u origin main
 - 🐙 **GitHub**: [@gamm3r96](https://github.com/gamm3r96)
 - 🌐 **Portfolio & Web**: [elvis-gatwara.vercel.app](https://elvis-gatwara.vercel.app)
 - ✉️ **Email**: [elvisgatwara@gmail.com](mailto:elvisgatwara@gmail.com)
+
+### ☕ Support & Sponsorship
+
+If you find this project useful for air-gapped security, zero-trust protocols, or offline data distribution, consider buying me a coffee:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/R6R71ERSUM)
 
 ---
 
