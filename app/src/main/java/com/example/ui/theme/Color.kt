@@ -17,6 +17,13 @@ val CyberVioletBright = Color(0xFFA78BFA)
 val CyberAmber = Color(0xFFF59E0B)
 val CyberRose = Color(0xFFF43F5E)
 
+// OLED Black Theme Surfaces
+val OledBg = Color(0xFF000000)
+val OledSurface = Color(0xFF000000)
+val OledSurfaceElevated = Color(0xFF0A0A0A)
+val OledSurfaceCard = Color(0xFF050505)
+val OledBorder = Color(0xFF141414)
+
 // Dark Theme Surfaces
 val DarkBg = Color(0xFF080C15)
 val DarkSurface = Color(0xFF0F172A)

@@ -1316,7 +1316,11 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             val mimeType = metadata?.mimeType ?: "application/octet-stream"
             val transferId = metadata?.transferId ?: UUID.randomUUID().toString()
 
-            val result = LocalTransferClient.downloadEncryptedPayload(hostIp, port) { bytesRead, total, frac, speed, currentChunk, totalChunks ->
+            val result = LocalTransferClient.downloadEncryptedPayload(
+                hostIp = hostIp,
+                port = port,
+                onConnected = { HapticFeedbackHelper.vibrateConnectionSuccess(context) }
+            ) { bytesRead, total, frac, speed, currentChunk, totalChunks ->
                 _p2pDownloadProgress.value = frac
                 _p2pDownloadSpeed.value = speed
                 _p2pDownloadBytesRead.value = bytesRead
@@ -1326,7 +1330,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 diagnosticsManager.updateTransferSpeed(speed, bytesRead, total)
             }
 
-            _isDownloadingP2P.value = false
+            _p2pDownloadProgress.value = 1f // Trigger decrypting UI phase
             _p2pDownloadSpeed.value = 0L
 
             result.onSuccess { encryptedEnvelope ->
@@ -1373,12 +1377,15 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                             HapticFeedbackHelper.vibratePassphraseError(context)
                             _toastEvent.emit("Failed to decrypt: Check passphrase or encryption key.")
                         }
+                    } finally {
+                        _isDownloadingP2P.value = false
                     }
                 }
             }.onFailure { err ->
                 withContext(Dispatchers.Main) {
                     HapticFeedbackHelper.vibratePassphraseError(context)
                     _toastEvent.emit("Connection failed to $hostIp:$port (${err.localizedMessage})")
+                    _isDownloadingP2P.value = false
                 }
             }
         }
@@ -1395,7 +1402,11 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
             _p2pDownloadBytesRead.value = 0L
             _p2pDownloadTotalBytes.value = ticket.fileSize
 
-            val result = LocalTransferClient.downloadEncryptedPayload(ticket.hostIp, ticket.port) { bytesRead, total, frac, speed, currentChunk, totalChunks ->
+            val result = LocalTransferClient.downloadEncryptedPayload(
+                hostIp = ticket.hostIp,
+                port = ticket.port,
+                onConnected = { HapticFeedbackHelper.vibrateConnectionSuccess(context) }
+            ) { bytesRead, total, frac, speed, currentChunk, totalChunks ->
                 _p2pDownloadProgress.value = frac
                 _p2pDownloadSpeed.value = speed
                 _p2pDownloadBytesRead.value = bytesRead
@@ -1405,7 +1416,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 diagnosticsManager.updateTransferSpeed(speed, bytesRead, if (total > 0) total else ticket.fileSize)
             }
 
-            _isDownloadingP2P.value = false
+            _p2pDownloadProgress.value = 1f // Trigger decrypting UI phase
             _p2pDownloadSpeed.value = 0L
 
             result.onSuccess { encryptedEnvelope ->
@@ -1451,11 +1462,14 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                     } catch (e: Exception) {
                         HapticFeedbackHelper.vibratePassphraseError(context)
                         _toastEvent.emit("Failed to decrypt P2P payload: ${e.localizedMessage}")
+                    } finally {
+                        _isDownloadingP2P.value = false
                     }
                 }
             }.onFailure { err ->
                 HapticFeedbackHelper.vibratePassphraseError(context)
                 _toastEvent.emit("Failed to download from ${ticket.hostIp}: ${err.localizedMessage}")
+                _isDownloadingP2P.value = false
             }
         }
     }

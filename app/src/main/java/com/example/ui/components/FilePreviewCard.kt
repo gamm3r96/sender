@@ -36,6 +36,9 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
@@ -50,6 +53,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -90,6 +96,7 @@ enum class DetectedFileType(
     JSON_DATA("Structured Data", Icons.Default.DataObject, CyberVioletBright),
     DOCUMENT("Document", Icons.Default.PictureAsPdf, CyberAmber),
     AUDIO("Audio Recording", Icons.Default.AudioFile, CyberEmerald),
+    VIDEO("Video Media", Icons.Default.Movie, Color(0xFFE879F9)),
     ARCHIVE_BINARY("Binary Archive", Icons.Default.FolderZip, Color(0xFF94A3B8))
 }
 
@@ -116,6 +123,8 @@ object FileTypeDetector {
 
             lowerMime.startsWith("audio/") || lowerName.endsWith(".mp3") || lowerName.endsWith(".wav") ||
                     lowerName.endsWith(".m4a") || lowerName.endsWith(".ogg") || lowerName.endsWith(".flac") -> DetectedFileType.AUDIO
+            lowerMime.startsWith("video/") || lowerName.endsWith(".mp4") || lowerName.endsWith(".mkv") ||
+                    lowerName.endsWith(".webm") || lowerName.endsWith(".avi") || lowerName.endsWith(".mov") -> DetectedFileType.VIDEO
 
             lowerMime.contains("pdf") || lowerName.endsWith(".pdf") || lowerName.endsWith(".doc") ||
                     lowerName.endsWith(".docx") || lowerName.endsWith(".xlsx") -> DetectedFileType.DOCUMENT
@@ -283,6 +292,12 @@ fun FilePreviewCard(
 
             // Preview Body: Image vs Text vs Hex vs Binary Info
             when {
+                detectedType == DetectedFileType.VIDEO && fileObj != null -> {
+                    VideoPreviewSection(filePath = fileObj.absolutePath)
+                }
+                detectedType == DetectedFileType.AUDIO && fileObj != null -> {
+                    AudioPreviewSection(filePath = fileObj.absolutePath, fileName = fileName)
+                }
                 decodedImage != null -> {
                     ImagePreviewSection(
                         bitmap = decodedImage,
@@ -609,4 +624,165 @@ private fun formatHexDump(bytes: ByteArray): String {
             append(String.format("%04X  %-48s  |%s|\n", i, hex, ascii))
         }
     }.trimEnd()
+}
+
+@Composable
+private fun VideoPreviewSection(filePath: String) {
+    var isPlaying by remember { androidx.compose.runtime.mutableStateOf(true) }
+    var videoView by remember { androidx.compose.runtime.mutableStateOf<android.widget.VideoView?>(null) }
+    
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black)
+                .border(1.dp, Color(0xFFE879F9).copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                .clickable {
+                    videoView?.let {
+                        if (it.isPlaying) {
+                            it.pause()
+                            isPlaying = false
+                        } else {
+                            it.start()
+                            isPlaying = true
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { context ->
+                    android.widget.VideoView(context).apply {
+                        setVideoPath(filePath)
+                        setOnPreparedListener { mp ->
+                            mp.isLooping = true
+                            start()
+                        }
+                        videoView = this
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            if (!isPlaying) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.6f),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play",
+                        tint = Color.White,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioPreviewSection(filePath: String, fileName: String) {
+    val context = LocalContext.current
+    var isPlaying by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(0f) }
+    var duration by remember { androidx.compose.runtime.mutableStateOf(0) }
+    
+    val mediaPlayer = remember(filePath) { 
+        android.media.MediaPlayer().apply {
+            try {
+                setDataSource(filePath)
+                prepare()
+                duration = this.duration
+            } catch (e: Exception) {}
+        }
+    }
+    
+    DisposableEffect(mediaPlayer) {
+        onDispose {
+            try {
+                if (mediaPlayer.isPlaying) mediaPlayer.stop()
+                mediaPlayer.release()
+            } catch (e: Exception) {}
+        }
+    }
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            try {
+                if (mediaPlayer.isPlaying) {
+                    progress = mediaPlayer.currentPosition.toFloat() / duration.coerceAtLeast(1)
+                } else {
+                    isPlaying = false
+                }
+            } catch (e: Exception) {}
+            kotlinx.coroutines.delay(250)
+        }
+    }
+
+    Surface(
+        color = Color(0xFF090D16),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, CyberEmerald.copy(alpha = 0.4f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.AudioFile,
+                contentDescription = null,
+                tint = CyberEmeraldBright,
+                modifier = Modifier.size(48.dp)
+            )
+            Text(
+                text = fileName,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        try {
+                            if (mediaPlayer.isPlaying) {
+                                mediaPlayer.pause()
+                                isPlaying = false
+                            } else {
+                                mediaPlayer.start()
+                                isPlaying = true
+                            }
+                        } catch (e: Exception) {}
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = "Play/Pause",
+                        tint = CyberEmeraldBright
+                    )
+                }
+                
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
+                    color = CyberEmeraldBright,
+                    trackColor = Color(0xFF1E293B)
+                )
+            }
+        }
+    }
 }

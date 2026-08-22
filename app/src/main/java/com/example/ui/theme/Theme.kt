@@ -72,6 +72,31 @@ private val LightColorScheme = lightColorScheme(
     onError = Color.White
 )
 
+private val OledColorScheme = darkColorScheme(
+    primary = CyberEmeraldBright,
+    onPrimary = Color(0xFF000000),
+    primaryContainer = Color(0xFF042F2E),
+    onPrimaryContainer = Color(0xFFA7F3D0),
+    secondary = CyberCyanBright,
+    onSecondary = Color(0xFF000000),
+    secondaryContainer = Color(0xFF083344),
+    onSecondaryContainer = Color(0xFFCFFAFE),
+    tertiary = CyberVioletBright,
+    onTertiary = Color(0xFF000000),
+    tertiaryContainer = Color(0xFF3B0764),
+    onTertiaryContainer = Color(0xFFE9D5FF),
+    background = OledBg,
+    onBackground = DarkTextPrimary,
+    surface = OledSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = OledSurfaceElevated,
+    onSurfaceVariant = DarkTextSecondary,
+    outline = OledBorder,
+    outlineVariant = Color(0xFF262626),
+    error = CyberRose,
+    onError = Color.White
+)
+
 @Composable
 fun MyApplicationTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -79,6 +104,7 @@ fun MyApplicationTheme(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
+        ThemeMode.OLED -> true
     },
     dynamicColor: Boolean = false, // Keep branded high-tech theme consistent
     content: @Composable () -> Unit
@@ -88,6 +114,7 @@ fun MyApplicationTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
+        themeMode == ThemeMode.OLED -> OledColorScheme
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }

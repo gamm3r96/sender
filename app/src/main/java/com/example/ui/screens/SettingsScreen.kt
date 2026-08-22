@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Password
@@ -264,10 +265,17 @@ fun SettingsScreen(
                             modifier = Modifier.weight(1f)
                         )
                         ThemeOptionCard(
-                            title = "Dark Cyber",
+                            title = "Dark",
                             icon = Icons.Default.DarkMode,
                             isSelected = themeMode == ThemeMode.DARK,
                             onClick = { onSelectThemeMode(ThemeMode.DARK) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        ThemeOptionCard(
+                            title = "OLED",
+                            icon = Icons.Default.Nightlight,
+                            isSelected = themeMode == ThemeMode.OLED,
+                            onClick = { onSelectThemeMode(ThemeMode.OLED) },
                             modifier = Modifier.weight(1f)
                         )
                         ThemeOptionCard(

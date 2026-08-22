@@ -127,6 +127,7 @@ object LocalTransferClient {
     suspend fun downloadEncryptedPayload(
         hostIp: String,
         port: Int,
+        onConnected: () -> Unit = {},
         onProgress: (bytesRead: Long, totalBytes: Long, progressFraction: Float, speedBytesPerSec: Long, currentChunkIndex: Int, totalChunks: Int) -> Unit
     ): Result<ByteArray> = withContext(Dispatchers.IO) {
         try {
@@ -139,6 +140,7 @@ object LocalTransferClient {
             if (!response.isSuccessful) {
                 return@withContext Result.failure(Exception("HTTP Error: ${response.code} ${response.message}"))
             }
+            onConnected()
 
             val body = response.body ?: return@withContext Result.failure(Exception("Empty response body"))
             val contentLength = body.contentLength()

@@ -159,6 +159,8 @@ import com.example.ui.components.AnimatedStreamProgressBar
 import com.example.ui.components.CameraPermissionFlow
 import com.example.ui.components.CompactStreamProgressBar
 import com.example.ui.components.PermissionsEducationalDialog
+import com.example.ui.components.SecureTransferProgressBar
+import com.example.ui.components.TransferPhase
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
 import com.example.ui.theme.CyberEmerald
@@ -304,7 +306,7 @@ fun ReceiveScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Optical QR",
+                            text = "Nearby QR Transfer",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = if (selectedReceiveTab == 0) CyberEmeraldBright else Color.LightGray
                         )
@@ -336,7 +338,7 @@ fun ReceiveScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (networkInfo.isHotspotActive) "Hotspot LAN" else "Wi-Fi LAN",
+                            text = "Local P2P Wi-Fi",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = if (selectedReceiveTab == 1) CyberCyanBright else Color.LightGray
                         )
@@ -1584,10 +1586,11 @@ fun P2PTransferPromptDialog(
                             color = CyberEmeraldBright
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { downloadProgress },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = CyberEmeraldBright
+                        SecureTransferProgressBar(
+                            phase = if (downloadProgress < 1f) TransferPhase.TRANSFERRING else TransferPhase.DECRYPTING,
+                            progress = downloadProgress,
+                            speedBytesPerSec = 0L,
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 } else {
@@ -2630,10 +2633,11 @@ fun WifiDirectReceiverView(
                                 color = CyberEmeraldBright
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { receiverServerProgress },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = CyberEmeraldBright
+                            SecureTransferProgressBar(
+                                phase = TransferPhase.TRANSFERRING,
+                                progress = receiverServerProgress,
+                                speedBytesPerSec = downloadSpeed,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
@@ -2683,10 +2687,11 @@ fun WifiDirectReceiverView(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        LinearProgressIndicator(
-                            progress = { downloadProgress },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = CyberEmeraldBright
+                        SecureTransferProgressBar(
+                            phase = if (downloadProgress < 1f) TransferPhase.TRANSFERRING else TransferPhase.DECRYPTING,
+                            progress = downloadProgress,
+                            speedBytesPerSec = downloadSpeed,
+                            modifier = Modifier.fillMaxWidth()
                         )
 
                         Spacer(modifier = Modifier.height(8.dp))

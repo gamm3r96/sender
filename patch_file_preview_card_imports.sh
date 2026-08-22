@@ -1,0 +1,2 @@
+sed -i '/import androidx.compose.material.icons.filled.PictureAsPdf/a import androidx.compose.material.icons.filled.Movie\nimport androidx.compose.material.icons.filled.PlayArrow\nimport androidx.compose.material.icons.filled.Pause' app/src/main/java/com/example/ui/components/FilePreviewCard.kt
+sed -i '/import androidx.compose.runtime.mutableStateOf/a import androidx.compose.runtime.mutableFloatStateOf\nimport androidx.compose.runtime.DisposableEffect\nimport androidx.compose.runtime.LaunchedEffect' app/src/main/java/com/example/ui/components/FilePreviewCard.kt

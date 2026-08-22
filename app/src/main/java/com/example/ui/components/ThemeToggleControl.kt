@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +68,11 @@ fun ThemeToggleIconButton(
             Icons.Default.DarkMode,
             "Dark Theme",
             CyberEmeraldBright
+        )
+        ThemeMode.OLED -> Triple(
+            Icons.Default.Nightlight,
+            "OLED Theme",
+            Color.White
         )
     }
 
@@ -148,6 +154,14 @@ fun ThemeToggleSegmentedControl(
                 activeColor = CyberEmeraldBright,
                 onClick = { onSelectMode(ThemeMode.DARK) },
                 testTag = "theme_btn_dark"
+            )
+            ThemePillItem(
+                title = "OLED",
+                icon = Icons.Default.Nightlight,
+                isSelected = selectedMode == ThemeMode.OLED,
+                activeColor = Color.White,
+                onClick = { onSelectMode(ThemeMode.OLED) },
+                testTag = "theme_btn_oled"
             )
         }
     }

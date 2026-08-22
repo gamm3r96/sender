@@ -110,6 +110,8 @@ import com.example.ui.components.CyberSecurityBadge
 import com.example.ui.components.FilePreviewCard
 import com.example.ui.components.QrCodeView
 import com.example.ui.components.SafetyNumberBox
+import com.example.ui.components.SecureTransferProgressBar
+import com.example.ui.components.TransferPhase
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
 import com.example.ui.theme.CyberEmerald
@@ -240,8 +242,8 @@ fun SendScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 val modes = listOf(
-                    TransferMode.QR_STREAM to "Air-Gapped QR Stream",
-                    TransferMode.P2P_DIRECT to "High-Speed P2P LAN"
+                    TransferMode.QR_STREAM to "Nearby QR Transfer",
+                    TransferMode.P2P_DIRECT to "Local P2P Wi-Fi"
                 )
 
                 modes.forEach { (mode, label) ->
@@ -665,6 +667,17 @@ fun SendScreen(
 
         // ACTIVELY PREPARED TRANSMISSION VIEW
         if (sendState != null) {
+            
+            if (sendState.isPreparing) {
+                item {
+                    SecureTransferProgressBar(
+                        phase = TransferPhase.ENCRYPTING,
+                        progress = 1f,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    )
+                }
+            }
+
             // File Metadata Pill
             item {
                 Surface(
@@ -1028,20 +1041,11 @@ fun SendScreen(
                                             }
                                         }
                                         Spacer(modifier = Modifier.height(6.dp))
-                                        LinearProgressIndicator(
-                                            progress = { p2pServerProgress },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(8.dp)
-                                                .clip(RoundedCornerShape(4.dp)),
-                                            color = CyberEmeraldBright,
-                                            trackColor = Color(0xFF1E293B)
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = "${(p2pServerProgress * 100).toInt()}% completed",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color.LightGray
+                                        SecureTransferProgressBar(
+                                            phase = TransferPhase.TRANSFERRING,
+                                            progress = p2pServerProgress,
+                                            speedBytesPerSec = p2pServerSpeed,
+                                            modifier = Modifier.fillMaxWidth()
                                         )
                                     }
                                 }

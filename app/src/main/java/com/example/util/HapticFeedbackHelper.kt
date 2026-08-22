@@ -90,6 +90,35 @@ object HapticFeedbackHelper {
     }
 
     /**
+     * Distinct tactile pulse when a successful P2P connection is established.
+     */
+    fun vibrateConnectionSuccess(context: Context) {
+        if (!isHapticEnabled(context)) return
+        try {
+            val vibrator = getVibrator(context) ?: return
+            if (!vibrator.hasVibrator()) return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Short, snappy double-click feel for connection establishment:
+                // [wait 0ms, buzz 25ms, pause 40ms, buzz 35ms]
+                val timings = longArrayOf(0, 25, 40, 35)
+                val amplitudes = intArrayOf(0, 180, 0, 255)
+                val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
+                vibrator.vibrate(effect)
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(longArrayOf(0, 25, 40, 35), -1)
+            }
+        } catch (_: Exception) {
+            try {
+                val vibrator = getVibrator(context) ?: return
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
      * Triumphant 4-stage crescendo celebratory haptic burst designed for Lottie-style success animations.
      */
     fun vibrateCelebrationSuccess(context: Context) {
@@ -97,7 +126,6 @@ object HapticFeedbackHelper {
         try {
             val vibrator = getVibrator(context) ?: return
             if (!vibrator.hasVibrator()) return
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 // 4-stage celebration crescendo pattern:
                 // [wait 0ms, pop 35ms, pause 40ms, pop 50ms, pause 50ms, strong hit 90ms, pause 70ms, grand fanfare 160ms]
@@ -115,10 +143,26 @@ object HapticFeedbackHelper {
     }
 
     /**
-     * Confirmation pulse when a P2P transfer finishes downloading.
+     * Distinctive deep pulse pattern when a P2P transfer finishes downloading successfully.
      */
     fun vibrateTransferSuccess(context: Context) {
-        vibrateCelebrationSuccess(context)
+        if (!isHapticEnabled(context)) return
+        try {
+            val vibrator = getVibrator(context) ?: return
+            if (!vibrator.hasVibrator()) return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Distinct pattern: [wait 0, buzz 60, pause 50, heavy buzz 100, pause 40, heavy buzz 100]
+                val timings = longArrayOf(0, 60, 50, 100, 40, 100)
+                val amplitudes = intArrayOf(0, 150, 0, 220, 0, 255)
+                val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
+                vibrator.vibrate(effect)
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(longArrayOf(0, 60, 50, 100, 40, 100), -1)
+            }
+        } catch (_: Exception) {
+            vibrateCelebrationSuccess(context)
+        }
     }
 
     /**
