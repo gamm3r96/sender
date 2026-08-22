@@ -28,8 +28,10 @@ import com.example.data.TransferStatus
 import com.example.p2p.DiscoveredPeer
 import com.example.p2p.LocalTransferClient
 import com.example.p2p.LocalTransferServer
+import com.example.p2p.NetworkDiagnosticsManager
 import com.example.p2p.NetworkInfoState
 import com.example.p2p.NetworkUtils
+import com.example.p2p.P2PConnectionMetrics
 import com.example.qr.QrBitmapDecoder
 import com.example.qr.QrCodeGenerator
 import com.example.ui.theme.ThemeMode
@@ -137,6 +139,38 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     private val _networkInfo = MutableStateFlow(NetworkUtils.getNetworkInfo(application))
     val networkInfo: StateFlow<NetworkInfoState> = _networkInfo.asStateFlow()
 
+    // Real-Time P2P & Signal Diagnostics Manager
+    val diagnosticsManager = NetworkDiagnosticsManager(application)
+    val p2pDiagnostics: StateFlow<P2PConnectionMetrics> = diagnosticsManager.metrics
+
+    private val _showDiagnosticsDialog = MutableStateFlow(false)
+    val showDiagnosticsDialog: StateFlow<Boolean> = _showDiagnosticsDialog.asStateFlow()
+
+    fun openDiagnosticsDialog(targetPeerIp: String? = null, port: Int = 8989) {
+        if (targetPeerIp != null) {
+            diagnosticsManager.setActivePeer(targetPeerIp, port)
+        }
+        _showDiagnosticsDialog.value = true
+        refreshDiagnostics()
+    }
+
+    fun closeDiagnosticsDialog() {
+        _showDiagnosticsDialog.value = false
+    }
+
+    fun refreshDiagnostics() {
+        viewModelScope.launch {
+            _networkInfo.value = NetworkUtils.getNetworkInfo(getApplication())
+            diagnosticsManager.refreshDiagnostics()
+        }
+    }
+
+    fun runDiagnosticsPingTest(targetIp: String? = null) {
+        viewModelScope.launch {
+            diagnosticsManager.runManualPingTest(targetIp)
+        }
+    }
+
     private val _discoveredPeers = MutableStateFlow<List<DiscoveredPeer>>(emptyList())
     val discoveredPeers: StateFlow<List<DiscoveredPeer>> = _discoveredPeers.asStateFlow()
 
@@ -192,6 +226,18 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     // Active record for inspection / viewer
     private val _inspectedRecord = MutableStateFlow<TransferRecord?>(null)
     val inspectedRecord: StateFlow<TransferRecord?> = _inspectedRecord.asStateFlow()
+
+    // Celebratory Lottie-style success animation record trigger
+    private val _celebrationRecord = MutableStateFlow<TransferRecord?>(null)
+    val celebrationRecord: StateFlow<TransferRecord?> = _celebrationRecord.asStateFlow()
+
+    fun showCelebration(record: TransferRecord) {
+        _celebrationRecord.value = record
+    }
+
+    fun dismissCelebration() {
+        _celebrationRecord.value = null
+    }
 
     // Notification toast events
     private val _toastEvent = MutableSharedFlow<String>()
@@ -422,10 +468,10 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
 
     // Biometric Security & App Lock Preference
     private val securityPrefs = application.getSharedPreferences("cipher_security_prefs", Context.MODE_PRIVATE)
-    private val _isBiometricEnabled = MutableStateFlow(securityPrefs.getBoolean("biometric_enabled", false))
+    private val _isBiometricEnabled = MutableStateFlow(securityPrefs.getBoolean("biometric_enabled", true))
     val isBiometricEnabled: StateFlow<Boolean> = _isBiometricEnabled.asStateFlow()
 
-    private val _isAppLocked = MutableStateFlow(securityPrefs.getBoolean("biometric_enabled", false))
+    private val _isAppLocked = MutableStateFlow(securityPrefs.getBoolean("biometric_enabled", true))
     val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
 
     private val _hasCustomPasscode = MutableStateFlow(!securityPrefs.getString("vault_pin", "").isNullOrBlank())
@@ -495,6 +541,28 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     init {
+        diagnosticsManager.startMonitoring(viewModelScope)
+
+        viewModelScope.launch {
+            p2pServer.transferSpeedBytesPerSec.collect { speed ->
+                diagnosticsManager.updateTransferSpeed(
+                    speedBytes = speed,
+                    bytesTransferred = p2pServer.bytesTransferred.value,
+                    totalBytes = p2pServer.totalBytesToTransfer.value
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            receiverServer.transferSpeedBytesPerSec.collect { speed ->
+                diagnosticsManager.updateTransferSpeed(
+                    speedBytes = speed,
+                    bytesTransferred = receiverServer.bytesTransferred.value,
+                    totalBytes = receiverServer.totalBytesToTransfer.value
+                )
+            }
+        }
+
         viewModelScope.launch {
             teamKeyRepository.allTeamKeys.collect { keys ->
                 if (_activeTeamKey.value == null && keys.isNotEmpty()) {
@@ -1056,6 +1124,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 val id = transferRepository.insert(record)
                 val savedRecord = record.copy(id = id)
                 _inspectedRecord.value = savedRecord
+                _celebrationRecord.value = savedRecord
                 _scanProgress.value = null
                 _pendingDecryption.value = null
                 HapticFeedbackHelper.vibrateDecryptionSuccess(context)
@@ -1106,6 +1175,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 val id = transferRepository.insert(record)
                 val savedRecord = record.copy(id = id)
                 _inspectedRecord.value = savedRecord
+                _celebrationRecord.value = savedRecord
                 _scanProgress.value = null
                 _pendingDecryption.value = null
                 HapticFeedbackHelper.vibrateDecryptionSuccess(context)
@@ -1185,6 +1255,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                         val savedRecord = record.copy(id = id)
                         withContext(Dispatchers.Main) {
                             _inspectedRecord.value = savedRecord
+                            _celebrationRecord.value = savedRecord
                             HapticFeedbackHelper.vibrateTransferSuccess(context)
                             _toastEvent.emit("File received via Web Drop: $fileName")
                         }
@@ -1226,6 +1297,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         passphraseOrKey: String,
         context: Context
     ) {
+        diagnosticsManager.setActivePeer(hostIp, port)
         viewModelScope.launch {
             _isDownloadingP2P.value = true
             _p2pDownloadProgress.value = 0f
@@ -1251,6 +1323,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 _p2pDownloadTotalBytes.value = total
                 _p2pDownloadCurrentChunk.value = currentChunk
                 _p2pDownloadTotalChunks.value = totalChunks
+                diagnosticsManager.updateTransferSpeed(speed, bytesRead, total)
             }
 
             _isDownloadingP2P.value = false
@@ -1291,6 +1364,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                         val savedRecord = record.copy(id = id)
                         withContext(Dispatchers.Main) {
                             _inspectedRecord.value = savedRecord
+                            _celebrationRecord.value = savedRecord
                             HapticFeedbackHelper.vibrateTransferSuccess(context)
                             _toastEvent.emit("Direct LAN transfer complete: $fileName")
                         }
@@ -1311,6 +1385,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun downloadAndDecryptP2PTicket(ticket: P2PTransferTicket, context: Context) {
+        diagnosticsManager.setActivePeer(ticket.hostIp, ticket.port)
         viewModelScope.launch {
             _isDownloadingP2P.value = true
             _p2pDownloadProgress.value = 0f
@@ -1327,6 +1402,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 _p2pDownloadTotalBytes.value = if (total > 0) total else ticket.fileSize
                 _p2pDownloadCurrentChunk.value = currentChunk
                 _p2pDownloadTotalChunks.value = totalChunks
+                diagnosticsManager.updateTransferSpeed(speed, bytesRead, if (total > 0) total else ticket.fileSize)
             }
 
             _isDownloadingP2P.value = false
@@ -1369,6 +1445,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                         val savedRecord = record.copy(id = id)
                         _scannedP2PTicket.value = null
                         _inspectedRecord.value = savedRecord
+                        _celebrationRecord.value = savedRecord
                         HapticFeedbackHelper.vibrateTransferSuccess(context)
                         _toastEvent.emit("P2P File received & verified: ${ticket.fileName}")
                     } catch (e: Exception) {

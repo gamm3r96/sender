@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
@@ -163,6 +164,7 @@ fun SettingsScreen(
     onPurgeAllTransfers: () -> Unit,
     onClearCache: () -> Unit,
     onClearCacheAndHistory: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     onShareApk: () -> Unit,
     onNavigateToAbout: () -> Unit,
     modifier: Modifier = Modifier
@@ -477,6 +479,15 @@ fun SettingsScreen(
                                 modifier = Modifier.testTag("test_haptic_error_buzz")
                             ) {
                                 Text("Error Buzz", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEF4444))
+                            }
+
+                            OutlinedButton(
+                                onClick = { onTestHaptic(5) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.testTag("test_haptic_celebration")
+                            ) {
+                                Text("Celebration Fanfare", style = MaterialTheme.typography.labelSmall, color = CyberEmeraldBright)
                             }
                         }
                     }
@@ -921,7 +932,41 @@ fun SettingsScreen(
             }
         }
 
-        // Section 5: Battery Saver & Power Optimization
+        // Section 5: P2P RF & Connection Diagnostics
+        item {
+            SettingsCard(
+                title = "P2P RF & Signal Diagnostics",
+                icon = Icons.Default.Sensors,
+                iconTint = CyberCyanBright
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Real-time telemetry monitor for Wi-Fi Direct, Hotspot AP signal strength (RSSI dBm), link speed, packet round-trip time (RTT latency), and throughput sparkline waveforms.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Button(
+                        onClick = onOpenDiagnostics,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_open_diagnostics_btn")
+                    ) {
+                        Icon(Icons.Default.Sensors, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Launch P2P Diagnostic Dashboard",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.Black
+                        )
+                    }
+                }
+            }
+        }
+
+        // Section 6: Battery Saver & Power Optimization
         item {
             SettingsCard(
                 title = "Battery Saver & Power Optimization",

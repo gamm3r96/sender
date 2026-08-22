@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
-  <img src="docs/screenshots/hero_banner.jpg" alt="Sender Air-Gapped Encrypted Transfer Suite" width="100%" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+  <img src="docs/screenshots/hero_banner.png" alt="Sender Air-Gapped Encrypted Transfer Suite" width="100%" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
 </p>
 
 > **Sender** is an ultra-secure, zero-knowledge, offline-first Android application designed for transmitting files, cryptographic keys, secrets, and raw binaries across physical boundaries using **high-frequency animated QR code streams** and **zero-cloud encrypted local P2P**.
@@ -66,8 +66,11 @@
 ## 📸 Screenshots & Interface Showcase
 
 <p align="center">
-  <img src="docs/screenshots/features_showcase.jpg" alt="Features Showcase - Optical Stream & CameraX Scanner" width="49%" style="border-radius: 8px;" />
-  <img src="docs/screenshots/security_vault.jpg" alt="Security Vault - Team Keyring & Biometrics" width="49%" style="border-radius: 8px;" />
+  <img src="docs/screenshots/features_showcase.png" alt="Features Showcase - Optical Stream & CameraX Scanner" width="49%" style="border-radius: 8px;" />
+  <img src="docs/screenshots/security_vault.png" alt="Security Vault - Team Keyring & Biometrics" width="49%" style="border-radius: 8px;" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/p2p_diagnostics.png" alt="P2P Diagnostics & Signal Health Dashboard" width="100%" style="border-radius: 8px;" />
 </p>
 
 ---

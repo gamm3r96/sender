@@ -102,6 +102,25 @@ object FileUtils {
         } catch (_: Exception) {}
     }
 
+    fun openFile(context: Context, record: com.example.data.TransferRecord) {
+        if (record.localFilePath != null) {
+            val file = File(record.localFilePath)
+            if (file.exists()) {
+                try {
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, record.mimeType)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Open with"))
+                    return
+                } catch (_: Exception) {}
+            }
+        }
+        reshareTransfer(context, record)
+    }
+
     fun formatTransferDetailsForClipboard(record: com.example.data.TransferRecord): String {
         val dateStr = DateFormatter.formatFullDateTime(record.timestamp)
         return buildString {

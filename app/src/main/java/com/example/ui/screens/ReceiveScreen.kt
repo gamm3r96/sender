@@ -81,6 +81,7 @@ import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
@@ -184,6 +185,9 @@ fun ReceiveScreen(
     p2pDownloadSpeed: Long = 0L,
     pendingDecryption: PendingDecryptionState?,
     networkInfo: NetworkInfoState = NetworkInfoState(),
+    p2pDiagnostics: com.example.p2p.P2PConnectionMetrics = com.example.p2p.P2PConnectionMetrics(),
+    onOpenDiagnostics: () -> Unit = {},
+    onRunPingTest: (String?) -> Unit = {},
     discoveredPeers: List<DiscoveredPeer> = emptyList(),
     isScanningPeers: Boolean = false,
     receiverServerStatus: LocalTransferServer.ServerStatus = LocalTransferServer.ServerStatus.Stopped,
@@ -662,6 +666,8 @@ fun ReceiveScreen(
     // Wi-Fi / Hotspot LAN Direct Receiver Hub
     WifiDirectReceiverView(
         networkInfo = networkInfo,
+        p2pDiagnostics = p2pDiagnostics,
+        onOpenDiagnostics = onOpenDiagnostics,
         discoveredPeers = discoveredPeers,
         isScanningPeers = isScanningPeers,
         isDownloading = isDownloadingP2P,
@@ -2025,6 +2031,8 @@ fun StreamTimeoutSettingsDialog(
 @Composable
 fun WifiDirectReceiverView(
     networkInfo: NetworkInfoState,
+    p2pDiagnostics: com.example.p2p.P2PConnectionMetrics,
+    onOpenDiagnostics: () -> Unit,
     discoveredPeers: List<DiscoveredPeer>,
     isScanningPeers: Boolean,
     isDownloading: Boolean,
@@ -2172,6 +2180,112 @@ fun WifiDirectReceiverView(
                             Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.LightGray)
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Wi-Fi Settings", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Live Real-Time P2P RF Signal & Diagnostic Telemetry Card
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("p2p_diagnostic_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sensors,
+                                contentDescription = null,
+                                tint = CyberCyanBright,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "RF Signal & Connection Diagnostics",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Health Score: ${p2pDiagnostics.healthScore}% • Status: ${p2pDiagnostics.healthGrade.name}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = CyberEmeraldBright
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = onOpenDiagnostics,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.testTag("open_diagnostics_from_receive_btn")
+                        ) {
+                            Text("Dashboard", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color.Black)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1E293B),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("RSSI Signal", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = Color.Gray)
+                                Text(
+                                    text = "${p2pDiagnostics.rssiDbm} dBm",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
+                                    color = CyberEmeraldBright
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1E293B),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Link Speed", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = Color.Gray)
+                                Text(
+                                    text = "${p2pDiagnostics.linkSpeedMbps} Mbps",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
+                                    color = CyberCyanBright
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1E293B),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("RTT Latency", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = Color.Gray)
+                                Text(
+                                    text = "${p2pDiagnostics.rttPingMs} ms",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
+                                    color = if (p2pDiagnostics.rttPingMs <= 40) CyberEmeraldBright else Color(0xFFF59E0B)
+                                )
+                            }
                         }
                     }
                 }

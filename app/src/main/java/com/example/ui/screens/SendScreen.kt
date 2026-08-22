@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
@@ -141,6 +142,8 @@ fun SendScreen(
     p2pServerProgress: Float,
     p2pServerSpeed: Long = 0L,
     networkInfo: NetworkInfoState = NetworkInfoState(),
+    p2pDiagnostics: com.example.p2p.P2PConnectionMetrics = com.example.p2p.P2PConnectionMetrics(),
+    onOpenDiagnostics: () -> Unit = {},
     onSelectFile: (Uri, TransferMode, String) -> Unit,
     onSendSecretText: (String, String, TransferMode, String) -> Unit,
     onSwitchMode: (TransferMode) -> Unit,
@@ -842,6 +845,57 @@ fun SendScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.LightGray, modifier = Modifier.size(18.dp))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // P2P Signal & Diagnostic Health Quick Telemetry Pill
+                            Surface(
+                                onClick = onOpenDiagnostics,
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFF0F172A),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("open_diagnostics_from_send_btn")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Sensors,
+                                            contentDescription = null,
+                                            tint = CyberCyanBright,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "P2P RF Health: ${p2pDiagnostics.healthScore}% (${p2pDiagnostics.healthGrade.name})",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = "Signal: ${p2pDiagnostics.rssiDbm} dBm • Link: ${p2pDiagnostics.linkSpeedMbps} Mbps • RTT: ${p2pDiagnostics.rttPingMs}ms",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                                                color = CyberCyanBright
+                                            )
+                                        }
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = onOpenDiagnostics,
+                                        shape = RoundedCornerShape(6.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Metrics", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = CyberEmeraldBright)
+                                    }
                                 }
                             }
 

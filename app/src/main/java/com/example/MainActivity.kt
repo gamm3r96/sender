@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
@@ -60,7 +61,10 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.auth.BiometricAuthManager
 import com.example.data.TransferRecord
+import com.example.p2p.NetworkUtils
+import com.example.ui.components.P2PDiagnosticDashboardDialog
 import com.example.ui.components.ThemeToggleIconButton
+import com.example.ui.components.TransferSuccessCelebrationDialog
 import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.BiometricLockScreen
 import com.example.ui.screens.DashboardScreen
@@ -76,6 +80,7 @@ import com.example.ui.theme.CyberEmerald
 import com.example.ui.theme.CyberEmeraldBright
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ThemeMode
+import com.example.util.FileUtils
 import com.example.viewmodel.CipherViewModel
 
 enum class AppDestination(val title: String, val icon: ImageVector, val tag: String) {
@@ -149,6 +154,9 @@ fun CipherApp(viewModel: CipherViewModel) {
     val streamRemainingSeconds by viewModel.streamRemainingSeconds.collectAsStateWithLifecycle()
     val lastTimeoutNotice by viewModel.lastTimeoutNotice.collectAsStateWithLifecycle()
     val inspectedRecord by viewModel.inspectedRecord.collectAsStateWithLifecycle()
+    val celebrationRecord by viewModel.celebrationRecord.collectAsStateWithLifecycle()
+    val p2pDiagnostics by viewModel.p2pDiagnostics.collectAsStateWithLifecycle()
+    val showDiagnosticsDialog by viewModel.showDiagnosticsDialog.collectAsStateWithLifecycle()
 
     val qrColorScheme by viewModel.qrColorScheme.collectAsStateWithLifecycle()
     val qrErrorCorrectionLevel by viewModel.qrErrorCorrectionLevel.collectAsStateWithLifecycle()
@@ -237,6 +245,17 @@ fun CipherApp(viewModel: CipherViewModel) {
                         }
                     },
                     actions = {
+                        IconButton(
+                            onClick = { viewModel.openDiagnosticsDialog() },
+                            modifier = Modifier.testTag("top_bar_diagnostics_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sensors,
+                                contentDescription = "P2P Signal Diagnostics",
+                                tint = CyberCyanBright
+                            )
+                        }
+
                         IconButton(
                             onClick = { viewModel.shareApk(context) },
                             modifier = Modifier.testTag("top_bar_share_apk_btn")
@@ -379,6 +398,8 @@ fun CipherApp(viewModel: CipherViewModel) {
                             p2pServerProgress = p2pServerProgress,
                             p2pServerSpeed = p2pServerSpeed,
                             networkInfo = networkInfo,
+                            p2pDiagnostics = p2pDiagnostics,
+                            onOpenDiagnostics = { viewModel.openDiagnosticsDialog() },
                             onSelectFile = { uri, mode, pass ->
                                 viewModel.prepareFileForSending(context, uri, mode, pass)
                             },
@@ -419,6 +440,9 @@ fun CipherApp(viewModel: CipherViewModel) {
                             lastTimeoutNotice = lastTimeoutNotice,
                             isHapticEnabled = isHapticEnabled,
                             networkInfo = networkInfo,
+                            p2pDiagnostics = p2pDiagnostics,
+                            onOpenDiagnostics = { viewModel.openDiagnosticsDialog() },
+                            onRunPingTest = { viewModel.runDiagnosticsPingTest(it) },
                             discoveredPeers = discoveredPeers,
                             isScanningPeers = isScanningPeers,
                             receiverServerStatus = receiverServerStatus,
@@ -525,6 +549,7 @@ fun CipherApp(viewModel: CipherViewModel) {
                             onPurgeAllTransfers = { viewModel.purgeAllTransfers() },
                             onClearCache = { viewModel.clearAppCache(context) },
                             onClearCacheAndHistory = { viewModel.clearCacheAndHistory(context) },
+                            onOpenDiagnostics = { viewModel.openDiagnosticsDialog() },
                             onShareApk = { viewModel.shareApk(context) },
                             onNavigateToAbout = { currentDestination = AppDestination.ABOUT }
                         )
@@ -545,6 +570,33 @@ fun CipherApp(viewModel: CipherViewModel) {
                         onSaveToDownloads = { viewModel.saveToDownloads(it, context) },
                         onShare = { viewModel.shareRecord(it, context) },
                         onDelete = { viewModel.deleteRecord(it) }
+                    )
+                }
+
+                // Celebratory Lottie-style Transfer Success Dialog & Particle Waveform
+                celebrationRecord?.let { record ->
+                    TransferSuccessCelebrationDialog(
+                        record = record,
+                        onDismiss = { viewModel.dismissCelebration() },
+                        onOpenFile = { FileUtils.openFile(context, it) },
+                        onSaveToDownloads = { viewModel.saveToDownloads(it, context) },
+                        onShare = { viewModel.shareRecord(it, context) },
+                        onViewDetails = {
+                            viewModel.dismissCelebration()
+                            viewModel.inspectRecord(it)
+                        }
+                    )
+                }
+
+                // Real-Time P2P Signal Strength & Health Diagnostic Dashboard Dialog
+                if (showDiagnosticsDialog) {
+                    P2PDiagnosticDashboardDialog(
+                        metrics = p2pDiagnostics,
+                        onDismiss = { viewModel.closeDiagnosticsDialog() },
+                        onRefresh = { viewModel.refreshDiagnostics() },
+                        onRunPingTest = { viewModel.runDiagnosticsPingTest(it) },
+                        onOpenWifiSettings = { NetworkUtils.openWifiSettings(context) },
+                        onOpenHotspotSettings = { NetworkUtils.openHotspotSettings(context) }
                     )
                 }
             }

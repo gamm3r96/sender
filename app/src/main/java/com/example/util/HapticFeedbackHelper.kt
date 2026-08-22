@@ -86,20 +86,28 @@ object HapticFeedbackHelper {
      * Ascending triumphant tactile pulse on successful cryptographic decryption.
      */
     fun vibrateDecryptionSuccess(context: Context) {
+        vibrateCelebrationSuccess(context)
+    }
+
+    /**
+     * Triumphant 4-stage crescendo celebratory haptic burst designed for Lottie-style success animations.
+     */
+    fun vibrateCelebrationSuccess(context: Context) {
         if (!isHapticEnabled(context)) return
         try {
             val vibrator = getVibrator(context) ?: return
             if (!vibrator.hasVibrator()) return
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // 3 ascending pulses: [wait 0ms, 40ms light, pause 50ms, 60ms medium, pause 50ms, 120ms heavy]
-                val timings = longArrayOf(0, 40, 50, 60, 50, 120)
-                val amplitudes = intArrayOf(0, 140, 0, 200, 0, 255)
+                // 4-stage celebration crescendo pattern:
+                // [wait 0ms, pop 35ms, pause 40ms, pop 50ms, pause 50ms, strong hit 90ms, pause 70ms, grand fanfare 160ms]
+                val timings = longArrayOf(0, 35, 40, 50, 50, 90, 70, 160)
+                val amplitudes = intArrayOf(0, 120, 0, 180, 0, 230, 0, 255)
                 val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
                 vibrator.vibrate(effect)
             } else {
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(longArrayOf(0, 40, 50, 60, 50, 120), -1)
+                vibrator.vibrate(longArrayOf(0, 35, 40, 50, 50, 90, 70, 160), -1)
             }
         } catch (_: Exception) {
             vibrateStreamCompleted(context)
@@ -110,7 +118,7 @@ object HapticFeedbackHelper {
      * Confirmation pulse when a P2P transfer finishes downloading.
      */
     fun vibrateTransferSuccess(context: Context) {
-        vibrateStreamCompleted(context)
+        vibrateCelebrationSuccess(context)
     }
 
     /**
