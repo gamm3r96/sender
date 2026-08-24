@@ -51,8 +51,19 @@ data class TransferRecord(
     val isFavorite: Boolean = false,
     val localFilePath: String? = null,
     val decryptedTextPreview: String? = null,
-    val notes: String = ""
-)
+    val notes: String = "",
+    val tags: String = "" // Comma-separated tags, e.g. "Work, Project"
+) {
+    fun getTagList(): List<String> {
+        if (tags.isBlank()) return emptyList()
+        return tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    fun hasTag(tag: String): Boolean {
+        if (tag.isBlank()) return false
+        return getTagList().any { it.equals(tag.trim(), ignoreCase = true) }
+    }
+}
 
 @Entity(tableName = "team_keys")
 data class TeamKey(

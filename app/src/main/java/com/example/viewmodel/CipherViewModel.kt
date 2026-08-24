@@ -83,7 +83,8 @@ data class SendPreparationState(
     val p2pTicket: P2PTransferTicket? = null,
     val densityPreset: QrDensityPreset = QrDensityPreset.STANDARD,
     val sourceFilePath: String? = null,
-    val rawTextPreview: String? = null
+    val rawTextPreview: String? = null,
+    val tags: List<String> = emptyList()
 )
 
 class CipherViewModel(application: Application) : AndroidViewModel(application) {
@@ -93,6 +94,14 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
 
     val transfers: StateFlow<List<TransferRecord>> = transferRepository.allTransfers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allUsedTags: StateFlow<List<String>> = transferRepository.allTransfers.map { records ->
+        val tagSet = mutableSetOf<String>()
+        records.forEach { r ->
+            tagSet.addAll(r.getTagList())
+        }
+        tagSet.toList().sorted()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val favoriteTransfers: StateFlow<List<TransferRecord>> = transferRepository.favoriteTransfers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -692,7 +701,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         context: Context,
         uri: Uri,
         mode: TransferMode,
-        customPassphrase: String = ""
+        customPassphrase: String = "",
+        tags: List<String> = emptyList()
     ) {
         viewModelScope.launch {
             _sendState.value = SendPreparationState(
@@ -701,7 +711,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 originalSize = 0,
                 rawBytes = ByteArray(0),
                 mode = mode,
-                isPreparing = true
+                isPreparing = true,
+                tags = tags
             )
 
             val meta = withContext(Dispatchers.IO) {
@@ -714,7 +725,7 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
-            processPayloadForSending(meta.fileName, meta.mimeType, meta.bytes, mode, customPassphrase)
+            processPayloadForSending(meta.fileName, meta.mimeType, meta.bytes, mode, customPassphrase, tags)
         }
     }
 
@@ -722,11 +733,12 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         title: String,
         secretText: String,
         mode: TransferMode,
-        customPassphrase: String = ""
+        customPassphrase: String = "",
+        tags: List<String> = emptyList()
     ) {
         val fileName = if (title.isBlank()) "secret_note.txt" else "${title.trim()}.txt"
         val bytes = secretText.toByteArray(Charsets.UTF_8)
-        processPayloadForSending(fileName, "text/plain", bytes, mode, customPassphrase)
+        processPayloadForSending(fileName, "text/plain", bytes, mode, customPassphrase, tags)
     }
 
     private fun processPayloadForSending(
@@ -734,7 +746,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         mimeType: String,
         rawBytes: ByteArray,
         mode: TransferMode,
-        customPassphrase: String
+        customPassphrase: String,
+        tags: List<String> = emptyList()
     ) {
         viewModelScope.launch(Dispatchers.Default) {
             val key = if (customPassphrase.isNotBlank()) {
@@ -807,7 +820,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 p2pTicket = p2pTicket,
                 densityPreset = currentPreset,
                 sourceFilePath = cachedFile?.absolutePath,
-                rawTextPreview = textPreview
+                rawTextPreview = textPreview,
+                tags = tags
             )
 
             _sendState.value = state
@@ -846,7 +860,8 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                 timestamp = System.currentTimeMillis(),
                 sha256Checksum = encrypted.sha256Original,
                 safetyNumber = safetyNum,
-                decryptedTextPreview = if (mimeType.startsWith("text/")) String(rawBytes, Charsets.UTF_8).take(200) else null
+                decryptedTextPreview = if (mimeType.startsWith("text/")) String(rawBytes, Charsets.UTF_8).take(200) else null,
+                tags = tags.distinct().joinToString(",")
             )
             transferRepository.insert(record)
         }
@@ -1550,6 +1565,21 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleFavorite(record: TransferRecord) {
         viewModelScope.launch {
             transferRepository.toggleFavorite(record.id, record.isFavorite)
+        }
+    }
+
+    fun updateTransferTags(recordId: Long, newTags: List<String>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val tagsString = newTags.distinct().filter { it.isNotBlank() }.joinToString(",")
+            transferRepository.updateTags(recordId, tagsString)
+            val currentInspected = _inspectedRecord.value
+            if (currentInspected?.id == recordId) {
+                _inspectedRecord.value = currentInspected.copy(tags = tagsString)
+            }
+            val currentCelebration = _celebrationRecord.value
+            if (currentCelebration?.id == recordId) {
+                _celebrationRecord.value = currentCelebration.copy(tags = tagsString)
+            }
         }
     }
 

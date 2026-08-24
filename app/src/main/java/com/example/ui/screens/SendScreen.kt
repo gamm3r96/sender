@@ -111,6 +111,8 @@ import com.example.ui.components.FilePreviewCard
 import com.example.ui.components.QrCodeView
 import com.example.ui.components.SafetyNumberBox
 import com.example.ui.components.SecureTransferProgressBar
+import com.example.ui.components.SendTagSelector
+import com.example.ui.components.TagBadgeList
 import com.example.ui.components.TransferPhase
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
@@ -146,8 +148,8 @@ fun SendScreen(
     networkInfo: NetworkInfoState = NetworkInfoState(),
     p2pDiagnostics: com.example.p2p.P2PConnectionMetrics = com.example.p2p.P2PConnectionMetrics(),
     onOpenDiagnostics: () -> Unit = {},
-    onSelectFile: (Uri, TransferMode, String) -> Unit,
-    onSendSecretText: (String, String, TransferMode, String) -> Unit,
+    onSelectFile: (Uri, TransferMode, String, List<String>) -> Unit,
+    onSendSecretText: (String, String, TransferMode, String, List<String>) -> Unit,
     onSwitchMode: (TransferMode) -> Unit,
     onTogglePlay: () -> Unit,
     onSelectChunk: (Int) -> Unit,
@@ -179,13 +181,15 @@ fun SendScreen(
     var useCustomKey by remember { mutableStateOf(false) }
     var showTeamKeyDropdown by remember { mutableStateOf(false) }
     var isFullScreenQr by remember { mutableStateOf(false) }
+    var selectedFileTags by remember { mutableStateOf(setOf<String>()) }
+    var selectedSecretTags by remember { mutableStateOf(setOf<String>()) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
             val pass = if (useCustomKey) customPassphrase else ""
-            onSelectFile(it, selectedMode, pass)
+            onSelectFile(it, selectedMode, pass, selectedFileTags.toList())
         }
     }
 
@@ -428,6 +432,17 @@ fun SendScreen(
                 // File Picker Upload & Category Selection Section
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // Tag Categorization for Outbound Files
+                        SendTagSelector(
+                            selectedTags = selectedFileTags,
+                            onToggleTag = { tag ->
+                                selectedFileTags = if (selectedFileTags.contains(tag)) selectedFileTags - tag else selectedFileTags + tag
+                            },
+                            onAddCustomTag = { tag ->
+                                selectedFileTags = selectedFileTags + tag
+                            }
+                        )
+
                         // Main Interactive File Dropzone Card
                         Card(
                             onClick = { filePickerLauncher.launch("*/*") },
@@ -641,11 +656,22 @@ fun SendScreen(
                             }
                         }
 
+                        // Tag Categorization for Outbound Secret Credentials
+                        SendTagSelector(
+                            selectedTags = selectedSecretTags,
+                            onToggleTag = { tag ->
+                                selectedSecretTags = if (selectedSecretTags.contains(tag)) selectedSecretTags - tag else selectedSecretTags + tag
+                            },
+                            onAddCustomTag = { tag ->
+                                selectedSecretTags = selectedSecretTags + tag
+                            }
+                        )
+
                         Button(
                             onClick = {
                                 if (secretContent.isNotBlank()) {
                                     val pass = if (useCustomKey) customPassphrase else ""
-                                    onSendSecretText(secretTitle, secretContent, selectedMode, pass)
+                                    onSendSecretText(secretTitle, secretContent, selectedMode, pass, selectedSecretTags.toList())
                                 }
                             },
                             enabled = secretContent.isNotBlank(),
@@ -707,6 +733,11 @@ fun SendScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+
+                            if (sendState.tags.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                TagBadgeList(tags = sendState.tags)
+                            }
                         }
 
                         IconButton(

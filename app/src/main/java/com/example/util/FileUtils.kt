@@ -135,6 +135,9 @@ object FileUtils {
             appendLine("Encrypted Size: ${formatBytes(record.encryptedSize)}")
             appendLine("Timestamp: $dateStr")
             appendLine("SHA-256 Checksum: ${record.sha256Checksum}")
+            if (record.tags.isNotEmpty()) {
+                appendLine("Tags: ${record.getTagList().joinToString(", ") { "#$it" }}")
+            }
             if (record.safetyNumber.isNotEmpty()) {
                 appendLine("Safety Number: ${record.safetyNumber}")
             }
@@ -175,12 +178,13 @@ object FileUtils {
             val file = File(exportDir, "cipherqr_history_$timestamp.csv")
 
             val csvContent = buildString {
-                appendLine("TransferId,FileName,Direction,Status,TeamName,TeamMember,TransferMode,OriginalSizeBytes,EncryptedSizeBytes,Timestamp,FormattedDate,Sha256Checksum,SafetyNumber")
+                appendLine("TransferId,FileName,Direction,Status,Tags,TeamName,TeamMember,TransferMode,OriginalSizeBytes,EncryptedSizeBytes,Timestamp,FormattedDate,Sha256Checksum,SafetyNumber")
                 for (r in records) {
                     val safeId = r.transferId.replace("\"", "\"\"")
                     val safeFileName = r.fileName.replace("\"", "\"\"")
                     val direction = if (r.isReceived) "RECEIVED" else "SENT"
                     val status = r.status.name
+                    val safeTags = r.tags.replace("\"", "\"\"")
                     val safeTeam = r.teamName.replace("\"", "\"\"")
                     val safeMember = r.teamMemberName.replace("\"", "\"\"")
                     val mode = r.transferMode.name
@@ -191,7 +195,7 @@ object FileUtils {
                     val sha = r.sha256Checksum.replace("\"", "\"\"")
                     val safety = r.safetyNumber.replace("\"", "\"\"")
 
-                    appendLine("\"$safeId\",\"$safeFileName\",$direction,$status,\"$safeTeam\",\"$safeMember\",$mode,$origSize,$encSize,$time,\"$formattedDate\",\"$sha\",\"$safety\"")
+                    appendLine("\"$safeId\",\"$safeFileName\",$direction,$status,\"$safeTags\",\"$safeTeam\",\"$safeMember\",$mode,$origSize,$encSize,$time,\"$formattedDate\",\"$sha\",\"$safety\"")
                 }
             }
 
@@ -219,6 +223,10 @@ object FileUtils {
                     put("fileName", r.fileName)
                     put("isReceived", r.isReceived)
                     put("status", r.status.name)
+                    put("tags", r.tags)
+                    val tagsArr = org.json.JSONArray()
+                    r.getTagList().forEach { tagsArr.put(it) }
+                    put("tagsList", tagsArr)
                     put("teamName", r.teamName)
                     put("teamMemberName", r.teamMemberName)
                     put("transferMode", r.transferMode.name)

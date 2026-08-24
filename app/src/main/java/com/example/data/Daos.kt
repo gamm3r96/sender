@@ -28,8 +28,11 @@ interface TransferDao {
     @Query("SELECT * FROM transfer_records WHERE timestamp BETWEEN :startTime AND :endTime ORDER BY timestamp DESC")
     fun getTransfersByDateRange(startTime: Long, endTime: Long): Flow<List<TransferRecord>>
 
-    @Query("SELECT * FROM transfer_records WHERE fileName LIKE '%' || :query || '%' OR teamName LIKE '%' || :query || '%' OR sourceInfo LIKE '%' || :query || '%' OR destinationInfo LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    @Query("SELECT * FROM transfer_records WHERE fileName LIKE '%' || :query || '%' OR teamName LIKE '%' || :query || '%' OR sourceInfo LIKE '%' || :query || '%' OR destinationInfo LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%' ORDER BY timestamp DESC")
     fun searchTransfers(query: String): Flow<List<TransferRecord>>
+
+    @Query("SELECT * FROM transfer_records WHERE tags LIKE '%' || :tag || '%' ORDER BY timestamp DESC")
+    fun getTransfersByTag(tag: String): Flow<List<TransferRecord>>
 
     @Query("SELECT * FROM transfer_records WHERE id = :id LIMIT 1")
     suspend fun getTransferById(id: Long): TransferRecord?
@@ -63,6 +66,9 @@ interface TransferDao {
 
     @Query("UPDATE transfer_records SET isFavorite = :isFav WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFav: Boolean)
+
+    @Query("UPDATE transfer_records SET tags = :tags WHERE id = :id")
+    suspend fun updateTags(id: Long, tags: String)
 }
 
 @Dao

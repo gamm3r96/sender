@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.TransferMode
 import com.example.data.TransferRecord
+import com.example.ui.components.TagFilterRow
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
 import com.example.ui.theme.CyberEmerald
@@ -121,6 +122,7 @@ fun HistoryScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }
     var selectedDateFilter by remember { mutableStateOf(DateFilterOption.ALL) }
+    var selectedTagFilter by remember { mutableStateOf<String?>(null) }
 
     // Multi-Selection State
     var isSelectionMode by remember { mutableStateOf(false) }
@@ -129,7 +131,15 @@ fun HistoryScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var exportSelectionOnly by remember { mutableStateOf(false) }
 
-    val filteredTransfers = remember(transfers, searchQuery, selectedFilter, selectedDateFilter) {
+    val availableTags = remember(transfers) {
+        val tagSet = linkedSetOf("Work", "Personal", "Project", "Financial", "Legal", "Confidential")
+        transfers.forEach { r ->
+            tagSet.addAll(r.getTagList())
+        }
+        tagSet.toList()
+    }
+
+    val filteredTransfers = remember(transfers, searchQuery, selectedFilter, selectedDateFilter, selectedTagFilter) {
         val trimmedQuery = searchQuery.trim().lowercase(Locale.getDefault())
 
         val now = Calendar.getInstance()
@@ -160,6 +170,13 @@ fun HistoryScreen(
                 DateFilterOption.THIS_MONTH -> record.timestamp >= monthStart
             }
 
+            // Tag Filter Check
+            val matchesTagFilter = if (selectedTagFilter == null) {
+                true
+            } else {
+                record.hasTag(selectedTagFilter!!)
+            }
+
             // Category & Status Filter Check
             val matchesCategoryFilter = when (selectedFilter) {
                 "Success" -> record.status.isSuccess
@@ -174,13 +191,14 @@ fun HistoryScreen(
                 else -> true
             }
 
-            // Search Query Check (Matches File Name, Team Name, and All Date Formats)
+            // Search Query Check (Matches File Name, Team Name, Tags, and All Date Formats)
             val matchesQuery = if (trimmedQuery.isEmpty()) {
                 true
             } else {
                 val recordDate = Date(record.timestamp)
                 val matchesFileName = record.fileName.lowercase(Locale.getDefault()).contains(trimmedQuery)
                 val matchesTeamName = record.teamName.lowercase(Locale.getDefault()).contains(trimmedQuery)
+                val matchesTags = record.tags.lowercase(Locale.getDefault()).contains(trimmedQuery.removePrefix("#"))
                 val matchesTextPreview = record.decryptedTextPreview?.lowercase(Locale.getDefault())?.contains(trimmedQuery) == true
                 
                 // Formatted date string comparisons for robust date search
@@ -210,14 +228,14 @@ fun HistoryScreen(
                     else -> false
                 }
 
-                matchesFileName || matchesTeamName || matchesTextPreview || matchesDateString || matchesRelativeDate
+                matchesFileName || matchesTeamName || matchesTags || matchesTextPreview || matchesDateString || matchesRelativeDate
             }
 
-            matchesDateFilter && matchesCategoryFilter && matchesQuery
+            matchesDateFilter && matchesCategoryFilter && matchesTagFilter && matchesQuery
         }
     }
 
-    val isAnyFilterActive = searchQuery.isNotEmpty() || selectedFilter != "All" || selectedDateFilter != DateFilterOption.ALL
+    val isAnyFilterActive = searchQuery.isNotEmpty() || selectedFilter != "All" || selectedDateFilter != DateFilterOption.ALL || selectedTagFilter != null
 
     val totalSuccessfulTransfers = remember(transfers) {
         transfers.count { it.status.isSuccess }
@@ -900,7 +918,19 @@ fun HistoryScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Tag & Category Filter Pills Row
+            TagFilterRow(
+                availableTags = availableTags,
+                selectedTag = selectedTagFilter,
+                onSelectTag = { tag ->
+                    selectedTagFilter = tag
+                },
+                modifier = Modifier.padding(bottom = 2.dp)
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             // History List
             if (filteredTransfers.isEmpty()) {
@@ -960,6 +990,7 @@ fun HistoryScreen(
                                         searchQuery = ""
                                         selectedFilter = "All"
                                         selectedDateFilter = DateFilterOption.ALL
+                                        selectedTagFilter = null
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     border = BorderStroke(1.dp, CyberCyan.copy(alpha = 0.6f))

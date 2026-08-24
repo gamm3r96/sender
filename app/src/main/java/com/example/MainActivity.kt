@@ -429,11 +429,11 @@ fun CipherApp(viewModel: CipherViewModel) {
                             networkInfo = networkInfo,
                             p2pDiagnostics = p2pDiagnostics,
                             onOpenDiagnostics = { viewModel.openDiagnosticsDialog() },
-                            onSelectFile = { uri, mode, pass ->
-                                viewModel.prepareFileForSending(context, uri, mode, pass)
+                            onSelectFile = { uri, mode, pass, tags ->
+                                viewModel.prepareFileForSending(context, uri, mode, pass, tags)
                             },
-                            onSendSecretText = { title, content, mode, pass ->
-                                viewModel.prepareSecretTextForSending(title, content, mode, pass)
+                            onSendSecretText = { title, content, mode, pass, tags ->
+                                viewModel.prepareSecretTextForSending(title, content, mode, pass, tags)
                             },
                             onSwitchMode = { viewModel.switchSendMode(it) },
                             onTogglePlay = { viewModel.toggleStreamPlaying() },
@@ -602,7 +602,8 @@ fun CipherApp(viewModel: CipherViewModel) {
                         onDismiss = { viewModel.inspectRecord(null) },
                         onSaveToDownloads = { viewModel.saveToDownloads(it, context) },
                         onShare = { viewModel.shareRecord(it, context) },
-                        onDelete = { viewModel.deleteRecord(it) }
+                        onDelete = { viewModel.deleteRecord(it) },
+                        onUpdateTags = { id, tags -> viewModel.updateTransferTags(id, tags) }
                     )
                 }
 

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
@@ -37,8 +38,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +62,8 @@ import com.example.data.TransferRecord
 import com.example.ui.components.CyberSecurityBadge
 import com.example.ui.components.FilePreviewCard
 import com.example.ui.components.SafetyNumberBox
+import com.example.ui.components.TagBadgeList
+import com.example.ui.components.TagEditorDialog
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
 import com.example.ui.theme.CyberEmerald
@@ -73,14 +80,27 @@ fun FileDetailDialog(
     onDismiss: () -> Unit,
     onSaveToDownloads: (TransferRecord) -> Unit,
     onShare: (TransferRecord) -> Unit,
-    onDelete: (TransferRecord) -> Unit
+    onDelete: (TransferRecord) -> Unit,
+    onUpdateTags: (Long, List<String>) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
+    var showTagEditor by remember { mutableStateOf(false) }
 
     val formattedDate = com.example.util.DateFormatter.formatFullDateTime(record.timestamp)
     val relativeDate = com.example.util.DateFormatter.formatRelativeTime(record.timestamp)
+
+    if (showTagEditor) {
+        TagEditorDialog(
+            initialTags = record.getTagList(),
+            onDismiss = { showTagEditor = false },
+            onSaveTags = { newTags ->
+                onUpdateTags(record.id, newTags)
+                showTagEditor = false
+            }
+        )
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -145,6 +165,66 @@ fun FileDetailDialog(
                         android.widget.Toast.makeText(context, "Content copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Categories & Tags Section Card
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Sell,
+                                    contentDescription = null,
+                                    tint = CyberCyanBright,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "CATEGORIES & TAGS",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = CyberCyanBright
+                                )
+                            }
+
+                            TextButton(
+                                onClick = { showTagEditor = true },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.testTag("edit_tags_btn")
+                            ) {
+                                Text(
+                                    text = if (record.tags.isEmpty()) "+ Add Tags" else "Edit Tags",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = CyberEmeraldBright
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (record.tags.isNotEmpty()) {
+                            TagBadgeList(
+                                tags = record.getTagList(),
+                                maxVisible = 10,
+                                onTagClick = { showTagEditor = true }
+                            )
+                        } else {
+                            Text(
+                                text = "No category tags assigned. Tap 'Add Tags' to organize (e.g. Work, Personal, Project).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 

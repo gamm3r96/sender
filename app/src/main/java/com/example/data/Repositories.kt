@@ -17,6 +17,8 @@ class TransferRepository(private val transferDao: TransferDao) {
 
     fun searchTransfers(query: String): Flow<List<TransferRecord>> = transferDao.searchTransfers(query)
 
+    fun getTransfersByTag(tag: String): Flow<List<TransferRecord>> = transferDao.getTransfersByTag(tag)
+
     suspend fun getById(id: Long): TransferRecord? = transferDao.getTransferById(id)
 
     suspend fun getByTransferId(transferId: String): TransferRecord? = transferDao.getTransferByTransferId(transferId)
@@ -24,6 +26,8 @@ class TransferRepository(private val transferDao: TransferDao) {
     suspend fun insert(record: TransferRecord): Long = transferDao.insertTransfer(record)
 
     suspend fun update(record: TransferRecord) = transferDao.updateTransfer(record)
+
+    suspend fun updateTags(id: Long, tags: String) = transferDao.updateTags(id, tags)
 
     suspend fun delete(record: TransferRecord) = transferDao.deleteTransfer(record)
 

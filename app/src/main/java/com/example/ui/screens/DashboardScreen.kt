@@ -99,6 +99,7 @@ import com.example.data.TransferRecord
 import com.example.ui.components.AnimatedPulseBadge
 import com.example.ui.components.CyberSecurityBadge
 import com.example.ui.components.GlowingSecurityCard
+import com.example.ui.components.TagBadgeList
 import com.example.ui.components.ThemeToggleSegmentedControl
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
@@ -981,6 +982,14 @@ fun TransferListItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+
+                    if (record.tags.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(3.dp))
+                        TagBadgeList(
+                            tags = record.getTagList(),
+                            maxVisible = 3
+                        )
+                    }
                 }
 
                 if (!isSelectionMode) {
@@ -1234,6 +1243,20 @@ fun TransferListItem(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+
+                    if (record.tags.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "CATEGORIES & TAGS",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                            color = CyberCyanBright
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        TagBadgeList(
+                            tags = record.getTagList(),
+                            maxVisible = 10
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
