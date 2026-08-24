@@ -65,6 +65,12 @@ import com.example.ui.theme.CyberEmeraldBright
 import com.example.ui.theme.CyberVioletBright
 import com.example.util.FileUtils
 
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.ui.graphics.StrokeCap
+
 /**
  * Animated High-Tech QR Stream Decoding Progress Bar.
  * Visualizes real-time frame buffering, decoding throughput, SHA-256 validation,
@@ -142,7 +148,7 @@ fun AnimatedStreamProgressBar(
                     )
 
                     Text(
-                        text = if (isComplete) "DECODING COMPLETE ✓" else "DECODING QR STREAM...",
+                        text = if (isComplete) "100% REASSEMBLED ✓" else "REASSEMBLING QR FRAMES...",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
@@ -154,27 +160,45 @@ fun AnimatedStreamProgressBar(
                     )
                 }
 
-                // High-visibility percentage badge
+                // High-visibility percentage badge with frame counter
                 Surface(
-                    color = if (isComplete) CyberEmerald.copy(alpha = 0.2f) else CyberCyan.copy(alpha = 0.15f),
+                    color = if (isComplete) CyberEmerald.copy(alpha = 0.25f) else CyberCyan.copy(alpha = 0.18f),
                     shape = RoundedCornerShape(6.dp),
                     border = androidx.compose.foundation.BorderStroke(
-                        0.8.dp,
-                        if (isComplete) CyberEmeraldBright.copy(alpha = 0.7f) else CyberCyanBright.copy(alpha = 0.6f)
+                        1.dp,
+                        if (isComplete) CyberEmeraldBright.copy(alpha = 0.8f) else CyberCyanBright.copy(alpha = 0.7f)
                     )
                 ) {
-                    Text(
-                        text = "$percentage%",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp
-                        ),
-                        color = if (isComplete) CyberEmeraldBright else CyberCyanBright,
-                        modifier = Modifier
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                            .testTag("stream_progress_percentage_badge")
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "${scanProgress.receivedCount}/${scanProgress.totalChunks}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = if (isComplete) CyberEmeraldBright.copy(alpha = 0.9f) else CyberCyan.copy(alpha = 0.9f)
+                        )
+                        Text(
+                            text = "•",
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
+                        Text(
+                            text = "$percentage%",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp
+                            ),
+                            color = if (isComplete) CyberEmeraldBright else CyberCyanBright,
+                            modifier = Modifier.testTag("stream_progress_percentage_badge")
+                        )
+                    }
                 }
             }
         }
@@ -564,3 +588,278 @@ fun CompactStreamProgressBar(
         }
     }
 }
+
+/**
+ * Radial / Circular Gauge Visual Indicator for QR Transmission Frame Reassembly.
+ * Displays percentage in the center with animated arc sweep, glowing head dot, and frame ratio.
+ */
+@Composable
+fun QrTransmissionFrameGauge(
+    scanProgress: QrChunkProgress,
+    modifier: Modifier = Modifier,
+    size: Dp = 110.dp,
+    strokeWidth: Dp = 8.dp
+) {
+    val animatedFraction by animateFloatAsState(
+        targetValue = scanProgress.progressFraction.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+        label = "gauge_progress"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "gauge_effects")
+    val sweepAngleBonus by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "gauge_radar"
+    )
+
+    val isComplete = scanProgress.isComplete
+    val percentage = (animatedFraction * 100).toInt().coerceIn(0, 100)
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .testTag("qr_transmission_frame_gauge"),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(size)) {
+            val strokePx = strokeWidth.toPx()
+            val arcSize = Size(this.size.width - strokePx, this.size.height - strokePx)
+            val topLeft = Offset(strokePx / 2, strokePx / 2)
+
+            // Background Track
+            drawArc(
+                color = Color(0xFF0F172A),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = strokePx, cap = StrokeCap.Round)
+            )
+
+            // Outer subtle border track
+            drawArc(
+                color = Color.White.copy(alpha = 0.08f),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = strokePx + 2f, cap = StrokeCap.Round)
+            )
+
+            // Animated Foreground Arc
+            if (animatedFraction > 0f) {
+                val gradientBrush = Brush.sweepGradient(
+                    listOf(
+                        CyberCyan,
+                        CyberCyanBright,
+                        CyberEmeraldBright,
+                        CyberCyan
+                    )
+                )
+
+                drawArc(
+                    brush = gradientBrush,
+                    startAngle = 270f,
+                    sweepAngle = 360f * animatedFraction,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                )
+            }
+        }
+
+        // Center Content
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "$percentage%",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 20.sp
+                ),
+                color = if (isComplete) CyberEmeraldBright else CyberCyanBright
+            )
+
+            Text(
+                text = "${scanProgress.receivedCount}/${scanProgress.totalChunks} Frames",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color.White.copy(alpha = 0.85f)
+            )
+
+            Text(
+                text = if (isComplete) "ASSEMBLED" else "RECEIVING",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.5.sp
+                ),
+                color = if (isComplete) CyberEmeraldBright else CyberCyan
+            )
+        }
+    }
+}
+
+/**
+ * Visual Reassembly Banner Card for QR transmissions:
+ * Incorporates large percentage status, frame progress, throughput, and SHA-256 integrity indicator.
+ */
+@Composable
+fun QrFrameReassemblyBanner(
+    scanProgress: QrChunkProgress,
+    modifier: Modifier = Modifier,
+    onReset: (() -> Unit)? = null
+) {
+    val isComplete = scanProgress.isComplete
+    val percentage = (scanProgress.progressFraction * 100).toInt().coerceIn(0, 100)
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("qr_frame_reassembly_banner"),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFF0B132B).copy(alpha = 0.95f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isComplete) CyberEmeraldBright.copy(alpha = 0.8f) else CyberCyan.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Top Row: Title + Percentage Pill
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(if (isComplete) CyberEmerald.copy(alpha = 0.2f) else CyberCyan.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isComplete) Icons.Default.CheckCircle else Icons.Default.QrCode,
+                            contentDescription = null,
+                            tint = if (isComplete) CyberEmeraldBright else CyberCyanBright,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = if (isComplete) "QR Frames Reassembled" else "Receiving QR Transmission",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White
+                        )
+                        Text(
+                            text = "${scanProgress.receivedCount} of ${scanProgress.totalChunks} Frames Successfully Captured",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
+                            color = Color.LightGray
+                        )
+                    }
+                }
+
+                Surface(
+                    color = if (isComplete) CyberEmerald.copy(alpha = 0.25f) else CyberCyan.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isComplete) CyberEmeraldBright else CyberCyanBright
+                    )
+                ) {
+                    Text(
+                        text = "$percentage%",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 15.sp
+                        ),
+                        color = if (isComplete) CyberEmeraldBright else CyberCyanBright,
+                        modifier = Modifier
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                            .testTag("reassembly_banner_percentage_pill")
+                    )
+                }
+            }
+
+            // Visual Progress Bar
+            AnimatedStreamProgressBar(
+                scanProgress = scanProgress,
+                height = 10.dp,
+                showDetailedMetrics = false,
+                showBufferStrip = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Bottom Metrics Row: Transferred Size + Speed + Checksum
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${FileUtils.formatBytes(scanProgress.assembledBytes)} / ${FileUtils.formatBytes(scanProgress.originalSize)}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
+                    color = Color.LightGray
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = null,
+                        tint = CyberEmeraldBright,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = scanProgress.formattedTransferSpeed,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp
+                        ),
+                        color = CyberEmeraldBright
+                    )
+                }
+
+                if (isComplete) {
+                    Text(
+                        text = "SHA-256 Validated ✓",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp
+                        ),
+                        color = CyberEmeraldBright
+                    )
+                }
+            }
+        }
+    }
+}
+

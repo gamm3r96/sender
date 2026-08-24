@@ -197,6 +197,35 @@ fun CipherApp(viewModel: CipherViewModel) {
         }
     }
 
+    fun requestBiometricAuth(title: String, onSuccess: () -> Unit) {
+        if (!isBiometricEnabled || biometricStatus !is com.example.auth.BiometricStatus.Available) {
+            onSuccess()
+            return
+        }
+        activity?.let { act ->
+            BiometricAuthManager.authenticate(
+                activity = act,
+                title = title,
+                subtitle = "Verify fingerprint or face unlock to access sensitive decryption keys",
+                negativeButtonText = "Cancel",
+                onSuccess = {
+                    com.example.util.HapticFeedbackHelper.vibrateBiometricSuccess(context)
+                    onSuccess()
+                },
+                onError = { code, msg ->
+                    if (code != androidx.biometric.BiometricPrompt.ERROR_USER_CANCELED &&
+                        code != androidx.biometric.BiometricPrompt.ERROR_NEGATIVE_BUTTON
+                    ) {
+                        Toast.makeText(context, "Authentication error: $msg", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onFailed = {
+                    Toast.makeText(context, "Biometric authentication not recognized", Toast.LENGTH_SHORT).show()
+                }
+            )
+        } ?: onSuccess()
+    }
+
     LaunchedEffect(Unit) {
         viewModel.toastEvent.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -502,7 +531,11 @@ fun CipherApp(viewModel: CipherViewModel) {
                             onAddNewKey = { name, pass ->
                                 viewModel.addTeamKey(name, pass)
                             },
-                            onDeleteKey = { viewModel.deleteTeamKey(it) }
+                            onDeleteKey = { viewModel.deleteTeamKey(it) },
+                            isBiometricEnabled = isBiometricEnabled,
+                            onRequestBiometricAuth = { title, onAuthSuccess ->
+                                requestBiometricAuth(title, onAuthSuccess)
+                            }
                         )
                     }
 

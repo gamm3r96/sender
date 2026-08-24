@@ -256,6 +256,13 @@ object HapticFeedbackHelper {
         vibrateBiometricSuccess(context)
     }
 
+    /**
+     * Tactile feedback on interactive UI button press or sequence restart.
+     */
+    fun vibrateButtonTap(context: Context) {
+        vibrateBiometricSuccess(context)
+    }
+
     private fun getVibrator(context: Context): Vibrator? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager

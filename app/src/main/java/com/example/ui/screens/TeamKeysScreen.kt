@@ -69,6 +69,10 @@ import com.example.ui.theme.CyberEmeraldBright
 import com.example.ui.theme.CyberViolet
 import com.example.ui.theme.CyberVioletBright
 
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+
 @Composable
 fun TeamKeysScreen(
     teamKeys: List<TeamKey>,
@@ -77,11 +81,14 @@ fun TeamKeysScreen(
     onSetDefaultKey: (Long) -> Unit,
     onAddNewKey: (String, String) -> Unit,
     onDeleteKey: (TeamKey) -> Unit,
+    isBiometricEnabled: Boolean = false,
+    onRequestBiometricAuth: ((title: String, onSuccess: () -> Unit) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val clipboardManager = LocalClipboardManager.current
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedKeyForQr by remember { mutableStateOf<TeamKey?>(null) }
+    var revealedKeyIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
 
     LazyColumn(
         modifier = modifier
@@ -204,7 +211,15 @@ fun TeamKeysScreen(
 
                         Row {
                             IconButton(
-                                onClick = { selectedKeyForQr = teamKey },
+                                onClick = {
+                                    if (isBiometricEnabled && onRequestBiometricAuth != null) {
+                                        onRequestBiometricAuth("Display Team Key QR", {
+                                            selectedKeyForQr = teamKey
+                                        })
+                                    } else {
+                                        selectedKeyForQr = teamKey
+                                    }
+                                },
                                 modifier = Modifier.testTag("show_key_qr_${teamKey.id}")
                             ) {
                                 Icon(
@@ -216,7 +231,15 @@ fun TeamKeysScreen(
 
                             if (teamKeys.size > 1) {
                                 IconButton(
-                                    onClick = { onDeleteKey(teamKey) },
+                                    onClick = {
+                                        if (isBiometricEnabled && onRequestBiometricAuth != null) {
+                                            onRequestBiometricAuth("Delete Encryption Key", {
+                                                onDeleteKey(teamKey)
+                                            })
+                                        } else {
+                                            onDeleteKey(teamKey)
+                                        }
+                                    },
                                     modifier = Modifier.testTag("delete_key_${teamKey.id}")
                                 ) {
                                     Icon(
@@ -230,6 +253,119 @@ fun TeamKeysScreen(
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    // Protected Secret Key / Passphrase Reveal
+                    val isRevealed = revealedKeyIds.contains(teamKey.id)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isRevealed) CyberEmerald.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isRevealed) Icons.Default.Key else Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = if (isRevealed) CyberEmeraldBright else CyberCyanBright,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "256-Bit Decryption Key",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = {
+                                            if (isRevealed) {
+                                                revealedKeyIds = revealedKeyIds - teamKey.id
+                                            } else {
+                                                if (isBiometricEnabled && onRequestBiometricAuth != null) {
+                                                    onRequestBiometricAuth("Reveal Secret Decryption Key", {
+                                                        revealedKeyIds = revealedKeyIds + teamKey.id
+                                                    })
+                                                } else {
+                                                    revealedKeyIds = revealedKeyIds + teamKey.id
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.size(28.dp).testTag("toggle_reveal_key_${teamKey.id}")
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = if (isRevealed) "Hide Key" else "Reveal Key",
+                                            tint = if (isRevealed) CyberEmeraldBright else CyberCyanBright,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
+                                    if (isRevealed) {
+                                        IconButton(
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(teamKey.passphraseOrKey))
+                                            },
+                                            modifier = Modifier.size(28.dp).testTag("copy_revealed_key_${teamKey.id}")
+                                        ) {
+                                            Icon(
+                                                Icons.Default.ContentCopy,
+                                                contentDescription = "Copy Key",
+                                                tint = CyberEmeraldBright,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = if (isRevealed) teamKey.passphraseOrKey else "••••••••••••••••••••••••••••••••",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    letterSpacing = if (isRevealed) 0.5.sp else 2.sp
+                                ),
+                                color = if (isRevealed) CyberEmeraldBright else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            if (!isRevealed && isBiometricEnabled) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Fingerprint,
+                                        contentDescription = null,
+                                        tint = CyberCyanBright,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = "Biometric authentication required to reveal secret key",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        color = CyberCyanBright
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Monospace Safety Fingerprint
                     Surface(

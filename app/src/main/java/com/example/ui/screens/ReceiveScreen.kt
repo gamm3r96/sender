@@ -79,6 +79,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sensors
@@ -87,6 +88,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TimerOff
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Tune
@@ -120,6 +122,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -148,7 +151,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import java.util.Locale
 import com.example.crypto.P2PTransferTicket
 import com.example.crypto.QrChunkProgress
 import com.example.p2p.DiscoveredPeer
@@ -158,8 +163,12 @@ import com.example.qr.QrCodeScannerAnalyzer
 import com.example.ui.components.AnimatedStreamProgressBar
 import com.example.ui.components.CameraPermissionFlow
 import com.example.ui.components.CompactStreamProgressBar
+import com.example.ui.components.DynamicCameraGuidanceGrid
+import com.example.ui.components.GuidanceGridMode
+import com.example.ui.components.GuidanceGridModeToggle
 import com.example.ui.components.PermissionsEducationalDialog
 import com.example.ui.components.SecureTransferProgressBar
+import com.example.ui.components.StreamChunkBufferStrip
 import com.example.ui.components.TransferPhase
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
@@ -249,6 +258,23 @@ fun ReceiveScreen(
         }
     }
 
+    // Real-time Stream Interruption Ticker (monitors frame silence duration)
+    var elapsedSinceLastChunkMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(scanProgress?.lastReceivedTimestamp, scanProgress?.receivedCount) {
+        if (scanProgress != null && !scanProgress.isComplete) {
+            while (true) {
+                val last = scanProgress.lastReceivedTimestamp
+                val now = System.currentTimeMillis()
+                elapsedSinceLastChunkMs = if (last > 0) (now - last).coerceAtLeast(0L) else 0L
+                delay(100L)
+            }
+        } else {
+            elapsedSinceLastChunkMs = 0L
+        }
+    }
+    val isStreamInterrupted = scanProgress != null && !scanProgress.isComplete && elapsedSinceLastChunkMs >= 5000L
+    val interruptedSeconds = (elapsedSinceLastChunkMs / 1000f).coerceAtLeast(0f)
+
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -263,6 +289,7 @@ fun ReceiveScreen(
     }
 
     var selectedReceiveTab by remember { mutableStateOf(0) } // 0 = Optical QR Scanner, 1 = Wi-Fi / Hotspot LAN
+    var guidanceGridMode by remember { mutableStateOf(GuidanceGridMode.FULL_ASSIST) }
 
     Column(
         modifier = modifier
@@ -445,7 +472,14 @@ fun ReceiveScreen(
                     scanProgress = scanProgress,
                     streamRemainingSeconds = streamRemainingSeconds,
                     frameCaptureTrigger = frameCaptureTrigger,
-                    lastCapturedIndex = scanProgress?.lastReceivedIndex
+                    lastCapturedIndex = scanProgress?.lastReceivedIndex,
+                    guidanceGridMode = guidanceGridMode,
+                    isInterrupted = isStreamInterrupted,
+                    interruptedSeconds = interruptedSeconds,
+                    onRestartSequence = {
+                        com.example.util.HapticFeedbackHelper.vibrateButtonTap(context)
+                        onResetScan()
+                    }
                 )
 
                 // Animated Tap-to-Focus Target Indicator
@@ -468,7 +502,11 @@ fun ReceiveScreen(
                     shape = RoundedCornerShape(100.dp),
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
-                        if (scanProgress != null) CyberCyanBright.copy(alpha = 0.7f) else CyberEmerald.copy(alpha = 0.5f)
+                        when {
+                            isStreamInterrupted -> Color(0xFFEF4444)
+                            scanProgress != null -> CyberCyanBright.copy(alpha = 0.7f)
+                            else -> CyberEmerald.copy(alpha = 0.5f)
+                        }
                     )
                 ) {
                     Row(
@@ -479,26 +517,38 @@ fun ReceiveScreen(
                             modifier = Modifier
                                 .size(9.dp)
                                 .clip(CircleShape)
-                                .background(if (scanProgress != null) CyberCyanBright else CyberEmeraldBright)
+                                .background(
+                                    when {
+                                        isStreamInterrupted -> Color(0xFFEF4444)
+                                        scanProgress != null -> CyberCyanBright
+                                        else -> CyberEmeraldBright
+                                    }
+                                )
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (scanProgress != null) {
-                                "ASSEMBLING: ${scanProgress.receivedCount}/${scanProgress.totalChunks}"
-                            } else {
-                                "AIR-GAP SCANNER ACTIVE"
+                            text = when {
+                                isStreamInterrupted -> "STREAM INTERRUPTED (${String.format(Locale.US, "%.1f", interruptedSeconds)}s)"
+                                scanProgress != null -> "ASSEMBLING: ${scanProgress.receivedCount}/${scanProgress.totalChunks}"
+                                else -> "AIR-GAP SCANNER ACTIVE"
                             },
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             ),
-                            color = Color.White
+                            color = if (isStreamInterrupted) Color(0xFFFCA5A5) else Color.White
                         )
                     }
                 }
 
                 // Quick Camera Actions
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Dynamic Alignment Guidance Grid Toggle
+                    GuidanceGridModeToggle(
+                        currentMode = guidanceGridMode,
+                        onModeChanged = { guidanceGridMode = it }
+                    )
+
                     // Stream Timeout & Tactile Settings Button
                     IconButton(
                         onClick = { showTimeoutSettingsDialog = true },
@@ -592,7 +642,33 @@ fun ReceiveScreen(
                 }
             }
 
-            // Animated Inactivity Stream Timeout Alert Banner
+            // Animated Inactivity Stream Interruption Alert Banner (>= 5s inactivity)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isStreamInterrupted && lastTimeoutNotice == null,
+                enter = fadeIn() + scaleIn(initialScale = 0.92f),
+                exit = fadeOut() + scaleOut(targetScale = 0.92f),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 74.dp, start = 16.dp, end = 16.dp)
+                    .zIndex(10f)
+            ) {
+                scanProgress?.let { progress ->
+                    StreamInterruptedWarningCard(
+                        interruptedSeconds = interruptedSeconds,
+                        scanProgress = progress,
+                        streamRemainingSeconds = streamRemainingSeconds,
+                        onRestartSequence = {
+                            com.example.util.HapticFeedbackHelper.vibrateButtonTap(context)
+                            onResetScan()
+                        },
+                        onOpenSettings = {
+                            showTimeoutSettingsDialog = true
+                        }
+                    )
+                }
+            }
+
+            // Animated Inactivity Stream Timeout / Session Expired Alert Banner
             androidx.compose.animation.AnimatedVisibility(
                 visible = lastTimeoutNotice != null,
                 enter = fadeIn() + scaleIn(initialScale = 0.92f),
@@ -600,10 +676,16 @@ fun ReceiveScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 74.dp, start = 16.dp, end = 16.dp)
+                    .zIndex(10f)
             ) {
                 lastTimeoutNotice?.let { notice ->
                     StreamTimeoutAlertCard(
                         notice = notice,
+                        onRestartSequence = {
+                            com.example.util.HapticFeedbackHelper.vibrateButtonTap(context)
+                            onDismissTimeoutNotice()
+                            onResetScan()
+                        },
                         onDismiss = onDismissTimeoutNotice,
                         onOpenSettings = {
                             onDismissTimeoutNotice()
@@ -654,6 +736,8 @@ fun ReceiveScreen(
                 FrameAssemblyPanel(
                     scanProgress = scanProgress,
                     streamRemainingSeconds = streamRemainingSeconds,
+                    isInterrupted = isStreamInterrupted,
+                    interruptedSeconds = interruptedSeconds,
                     onResetScan = onResetScan,
                     onOpenTimeoutSettings = { showTimeoutSettingsDialog = true },
                     modifier = Modifier
@@ -749,7 +833,11 @@ fun ScannerOverlay(
     scanProgress: QrChunkProgress? = null,
     streamRemainingSeconds: Int? = null,
     frameCaptureTrigger: Long,
-    lastCapturedIndex: Int?
+    lastCapturedIndex: Int?,
+    guidanceGridMode: GuidanceGridMode = GuidanceGridMode.FULL_ASSIST,
+    isInterrupted: Boolean = false,
+    interruptedSeconds: Float = 0f,
+    onRestartSequence: () -> Unit = {}
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "scanner_laser")
     val laserOffset by infiniteTransition.animateFloat(
@@ -781,19 +869,35 @@ fun ScannerOverlay(
                 .size(280.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .border(
-                    width = if (burstAnim.value > 0.05f) 3.dp else 1.5.dp,
-                    color = if (burstAnim.value > 0.05f) CyberCyanBright else CyberEmerald.copy(alpha = 0.85f),
+                    width = if (burstAnim.value > 0.05f) 3.dp else if (isInterrupted) 2.dp else 1.5.dp,
+                    color = when {
+                        burstAnim.value > 0.05f -> CyberCyanBright
+                        isInterrupted -> Color(0xFFEF4444)
+                        else -> CyberEmerald.copy(alpha = 0.85f)
+                    },
                     shape = RoundedCornerShape(20.dp)
                 )
                 .background(
                     if (burstAnim.value > 0.05f) CyberCyanBright.copy(alpha = 0.15f * burstAnim.value) else Color.Transparent
                 )
         ) {
+            // Dynamic Camera Guidance Grid (Rule of 3rds, 4x4 matrix, horizon level, optical ticks)
+            DynamicCameraGuidanceGrid(
+                gridMode = guidanceGridMode,
+                isStreamActive = isStreamActive,
+                isBurstCapturing = burstAnim.value > 0.05f,
+                modifier = Modifier.fillMaxSize()
+            )
+
             // 4 Futuristic Corner Bracket Highlights
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val strokeWidth = 5.dp.toPx()
                 val cornerLength = 28.dp.toPx()
-                val color = if (burstAnim.value > 0.05f) CyberCyanBright else CyberEmeraldBright
+                val color = when {
+                    burstAnim.value > 0.05f -> CyberCyanBright
+                    isInterrupted -> Color(0xFFEF4444)
+                    else -> CyberEmeraldBright
+                }
 
                 // Top Left
                 drawLine(color, Offset(0f, 0f), Offset(cornerLength, 0f), strokeWidth)
@@ -814,7 +918,7 @@ fun ScannerOverlay(
 
             // Center Crosshair
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val crosshairColor = CyberCyan.copy(alpha = 0.35f)
+                val crosshairColor = if (isInterrupted) Color(0xFFEF4444).copy(alpha = 0.5f) else CyberCyan.copy(alpha = 0.35f)
                 val chSize = 14.dp.toPx()
                 val cx = size.width / 2
                 val cy = size.height / 2
@@ -831,13 +935,23 @@ fun ScannerOverlay(
                     .offset(y = laserOffset.dp)
                     .background(
                         Brush.horizontalGradient(
-                            listOf(
-                                Color.Transparent,
-                                CyberCyanBright,
-                                CyberEmeraldBright,
-                                CyberCyanBright,
-                                Color.Transparent
-                            )
+                            if (isInterrupted) {
+                                listOf(
+                                    Color.Transparent,
+                                    Color(0xFFEF4444),
+                                    Color(0xFFFCA5A5),
+                                    Color(0xFFEF4444),
+                                    Color.Transparent
+                                )
+                            } else {
+                                listOf(
+                                    Color.Transparent,
+                                    CyberCyanBright,
+                                    CyberEmeraldBright,
+                                    CyberCyanBright,
+                                    Color.Transparent
+                                )
+                            }
                         )
                     )
             )
@@ -865,10 +979,20 @@ fun ScannerOverlay(
 
             // Live In-Reticle Streaming Progress Overlay (Segment Percentage, Speed & Metrics)
             if (scanProgress != null) {
+                val percent = (scanProgress.progressFraction * 100).toInt().coerceIn(0, 100)
+                val isComplete = scanProgress.isComplete
+
                 Surface(
-                    color = Color.Black.copy(alpha = 0.85f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.7f)),
+                    color = Color(0xFF070D1E).copy(alpha = 0.92f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.2.dp,
+                        when {
+                            isComplete -> CyberEmeraldBright.copy(alpha = 0.85f)
+                            isInterrupted -> Color(0xFFEF4444).copy(alpha = 0.85f)
+                            else -> CyberCyan.copy(alpha = 0.75f)
+                        }
+                    ),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -876,9 +1000,11 @@ fun ScannerOverlay(
                         .testTag("camera_progress_overlay")
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        // Header Row: Status + Speed + Percentage Badge
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -886,30 +1012,48 @@ fun ScannerOverlay(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(6.dp)
+                                        .size(7.dp)
                                         .clip(CircleShape)
-                                        .background(CyberEmeraldBright)
+                                        .background(
+                                            when {
+                                                isComplete -> CyberEmeraldBright
+                                                isInterrupted -> Color(0xFFEF4444)
+                                                else -> CyberCyanBright
+                                            }
+                                        )
                                 )
                                 Text(
-                                    text = "STREAM RECEIVING",
+                                    text = when {
+                                        isComplete -> "REASSEMBLED ✓"
+                                        isInterrupted -> "STREAM INTERRUPTED"
+                                        else -> "REASSEMBLING FRAMES"
+                                    },
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp
+                                        fontSize = 10.5.sp,
+                                        letterSpacing = 0.5.sp
                                     ),
-                                    color = CyberCyanBright
+                                    color = when {
+                                        isComplete -> CyberEmeraldBright
+                                        isInterrupted -> Color(0xFFFCA5A5)
+                                        else -> CyberCyanBright
+                                    }
                                 )
                             }
 
                             // Real-time transfer speed badge (e.g. ⚡ 24.5 KB/s)
                             Surface(
-                                color = CyberEmerald.copy(alpha = 0.25f),
+                                color = if (isInterrupted) Color(0xFFEF4444).copy(alpha = 0.2f) else CyberEmerald.copy(alpha = 0.25f),
                                 shape = RoundedCornerShape(4.dp),
-                                border = androidx.compose.foundation.BorderStroke(0.5.dp, CyberEmeraldBright.copy(alpha = 0.7f)),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    0.5.dp,
+                                    if (isInterrupted) Color(0xFFEF4444).copy(alpha = 0.7f) else CyberEmeraldBright.copy(alpha = 0.7f)
+                                ),
                                 modifier = Modifier.testTag("stream_transfer_speed_indicator")
                             ) {
                                 Row(
@@ -918,53 +1062,81 @@ fun ScannerOverlay(
                                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Bolt,
+                                        imageVector = if (isInterrupted) Icons.Default.Warning else Icons.Default.Bolt,
                                         contentDescription = "Transfer Speed",
-                                        tint = CyberEmeraldBright,
+                                        tint = if (isInterrupted) Color(0xFFFCA5A5) else CyberEmeraldBright,
                                         modifier = Modifier.size(11.dp)
                                     )
                                     Text(
-                                        text = scanProgress.formattedTransferSpeed,
+                                        text = if (isInterrupted) "${String.format(Locale.US, "%.1f", interruptedSeconds)}s paused" else scanProgress.formattedTransferSpeed,
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontWeight = FontWeight.Bold,
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 10.sp
                                         ),
-                                        color = CyberEmeraldBright
+                                        color = if (isInterrupted) Color(0xFFFCA5A5) else CyberEmeraldBright
                                     )
                                 }
                             }
 
-                            val percent = (scanProgress.progressFraction * 100).toInt()
-                            Text(
-                                text = "$percent%",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                ),
-                                color = CyberEmeraldBright
-                            )
+                            // Prominent Percentage Pill
+                            Surface(
+                                color = when {
+                                    isComplete -> CyberEmerald.copy(alpha = 0.3f)
+                                    isInterrupted -> Color(0xFFEF4444).copy(alpha = 0.25f)
+                                    else -> CyberCyan.copy(alpha = 0.22f)
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    when {
+                                        isComplete -> CyberEmeraldBright
+                                        isInterrupted -> Color(0xFFEF4444)
+                                        else -> CyberCyanBright
+                                    }
+                                )
+                            ) {
+                                Text(
+                                    text = "$percent%",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Black,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.5.sp
+                                    ),
+                                    color = when {
+                                        isComplete -> CyberEmeraldBright
+                                        isInterrupted -> Color(0xFFFCA5A5)
+                                        else -> CyberCyanBright
+                                    },
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                )
+                            }
                         }
-
-                        Spacer(modifier = Modifier.height(6.dp))
 
                         // Reticle animated mini progress track with cyber sweep shimmer
                         CompactStreamProgressBar(
                             scanProgress = scanProgress,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(6.dp)
+                                .height(7.dp)
                         )
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        // Segmented micro chunk strip
+                        if (scanProgress.totalChunks in 2..48) {
+                            StreamChunkBufferStrip(
+                                scanProgress = scanProgress,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
+                        // Footer: Frame count, Assembled Bytes, FPS, and ETA
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "${scanProgress.receivedCount}/${scanProgress.totalChunks} chunks • ${FileUtils.formatBytes(scanProgress.assembledBytes)}",
+                                text = "${scanProgress.receivedCount}/${scanProgress.totalChunks} Frames • ${FileUtils.formatBytes(scanProgress.assembledBytes)}",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 10.sp
@@ -973,7 +1145,28 @@ fun ScannerOverlay(
                             )
 
                             val speed = scanProgress.estimatedSpeedChunksPerSec
-                            if (speed > 0f) {
+                            val eta = scanProgress.estimatedRemainingSeconds
+                            if (isInterrupted) {
+                                Text(
+                                    text = "Interrupted (${String.format(Locale.US, "%.1f", interruptedSeconds)}s)",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = Color(0xFFFCA5A5)
+                                )
+                            } else if (eta != null && !isComplete) {
+                                Text(
+                                    text = "ETA ~${eta}s (%.1f fps)".format(speed),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    color = CyberCyanBright
+                                )
+                            } else if (speed > 0f) {
                                 Text(
                                     text = "%.1f fps".format(speed),
                                     style = MaterialTheme.typography.labelSmall.copy(
@@ -993,13 +1186,17 @@ fun ScannerOverlay(
         Surface(
             color = Color.Black.copy(alpha = 0.75f),
             shape = RoundedCornerShape(100.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isInterrupted) Color(0xFFEF4444).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.15f)
+            ),
             modifier = Modifier
                 .align(Alignment.Center)
                 .offset(y = 170.dp)
         ) {
             val statusText = when {
                 scanProgress != null && scanProgress.isComplete -> "100% Assembled — Decrypting payload..."
+                scanProgress != null && isInterrupted -> "Stream Interrupted (${String.format(Locale.US, "%.1f", interruptedSeconds)}s) — Align camera or tap Restart"
                 scanProgress != null && streamRemainingSeconds != null -> "Receiving: ${(scanProgress.progressFraction * 100).toInt()}% • ${scanProgress.formattedTransferSpeed} • Reset in ${streamRemainingSeconds}s"
                 scanProgress != null -> "Receiving: ${(scanProgress.progressFraction * 100).toInt()}% • ${scanProgress.formattedTransferSpeed} (${scanProgress.receivedCount}/${scanProgress.totalChunks} chunks)"
                 isStreamActive -> "Hold steady — assembling stream chunks"
@@ -1008,7 +1205,11 @@ fun ScannerOverlay(
             Text(
                 text = statusText,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (scanProgress != null) CyberCyanBright else Color.LightGray,
+                color = when {
+                    isInterrupted -> Color(0xFFFCA5A5)
+                    scanProgress != null -> CyberCyanBright
+                    else -> Color.LightGray
+                },
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
             )
         }
@@ -1048,6 +1249,8 @@ fun TapFocusIndicator(point: Offset) {
 fun FrameAssemblyPanel(
     scanProgress: QrChunkProgress,
     streamRemainingSeconds: Int? = null,
+    isInterrupted: Boolean = false,
+    interruptedSeconds: Float = 0f,
     onResetScan: () -> Unit,
     onOpenTimeoutSettings: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -1056,7 +1259,10 @@ fun FrameAssemblyPanel(
         modifier = modifier.testTag("scan_progress_hud"),
         shape = RoundedCornerShape(20.dp),
         color = Color(0xFF0B132B).copy(alpha = 0.96f),
-        border = androidx.compose.foundation.BorderStroke(1.5.dp, CyberEmerald.copy(alpha = 0.7f)),
+        border = androidx.compose.foundation.BorderStroke(
+            1.5.dp,
+            if (isInterrupted) Color(0xFFEF4444).copy(alpha = 0.85f) else CyberEmerald.copy(alpha = 0.7f)
+        ),
         shadowElevation = 12.dp
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1074,14 +1280,14 @@ fun FrameAssemblyPanel(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(CyberEmerald.copy(alpha = 0.2f))
-                            .border(1.dp, CyberEmerald.copy(alpha = 0.6f), CircleShape),
+                            .background(if (isInterrupted) Color(0xFFEF4444).copy(alpha = 0.2f) else CyberEmerald.copy(alpha = 0.2f))
+                            .border(1.dp, if (isInterrupted) Color(0xFFEF4444).copy(alpha = 0.6f) else CyberEmerald.copy(alpha = 0.6f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Lock,
+                            imageVector = if (isInterrupted) Icons.Default.Warning else Icons.Default.Lock,
                             contentDescription = null,
-                            tint = CyberEmeraldBright,
+                            tint = if (isInterrupted) Color(0xFFFCA5A5) else CyberEmeraldBright,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -1107,7 +1313,7 @@ fun FrameAssemblyPanel(
                             Text(
                                 text = "TID: ${scanProgress.transferId}",
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                                color = CyberCyanBright
+                                color = if (isInterrupted) Color(0xFFFCA5A5) else CyberCyanBright
                             )
                         }
                     }
@@ -1169,6 +1375,73 @@ fun FrameAssemblyPanel(
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
+                    }
+                }
+            }
+
+            // Stream Interruption In-Panel Notification Banner
+            if (isInterrupted) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    color = Color(0xFF450A0A).copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("frame_assembly_interruption_warning")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Interrupted",
+                                tint = Color(0xFFFCA5A5),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Stream Interrupted (${String.format(Locale.US, "%.1f", interruptedSeconds)}s) — Missing frames",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp
+                                ),
+                                color = Color(0xFFFCA5A5),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Button(
+                            onClick = onResetScan,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.testTag("assembly_restart_sequence_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Replay,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Restart",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                ),
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -1627,11 +1900,12 @@ fun P2PTransferPromptDialog(
 
 /**
  * Stream Inactivity Timeout Notification Banner
- * Alerts the user when a QR stream capture was reset due to timeout inactivity
+ * Alerts the user when a QR stream capture was reset due to timeout inactivity / session expired
  */
 @Composable
 fun StreamTimeoutAlertCard(
     notice: StreamTimeoutNotice,
+    onRestartSequence: () -> Unit = {},
     onDismiss: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
@@ -1664,7 +1938,7 @@ fun StreamTimeoutAlertCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Timer,
+                            imageVector = Icons.Default.TimerOff,
                             contentDescription = null,
                             tint = Color(0xFFFCA5A5),
                             modifier = Modifier.size(20.dp)
@@ -1673,7 +1947,7 @@ fun StreamTimeoutAlertCard(
 
                     Column {
                         Text(
-                            text = "QR Stream Incomplete (Timed Out)",
+                            text = "Stream Session Expired",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = Color(0xFFFCA5A5)
                         )
@@ -1701,7 +1975,7 @@ fun StreamTimeoutAlertCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "Transfer for \"${notice.fileName}\" stopped receiving chunks (${notice.receivedCount}/${notice.totalChunks} assembled). The scanner buffer has been automatically reset.",
+                text = "Transfer for \"${notice.fileName}\" stopped receiving chunks (${notice.receivedCount}/${notice.totalChunks} assembled). The session expired and scanner buffer was reset.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White
             )
@@ -1735,13 +2009,164 @@ fun StreamTimeoutAlertCard(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 Button(
-                    onClick = onDismiss,
+                    onClick = onRestartSequence,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
                     shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("stream_timeout_restart_btn")
                 ) {
+                    Icon(
+                        imageVector = Icons.Default.Replay,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Scan Again",
+                        text = "Restart Sequence",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Visual Warning Card displayed when a QR stream transmission is interrupted for >= 5 seconds.
+ * Provides clear diagnosis and an easy "Restart Sequence" button to reset the buffer immediately.
+ */
+@Composable
+fun StreamInterruptedWarningCard(
+    interruptedSeconds: Float,
+    scanProgress: QrChunkProgress,
+    streamRemainingSeconds: Int? = null,
+    onRestartSequence: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("stream_interrupted_warning_card"),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFF200F12).copy(alpha = 0.96f),
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFEF4444).copy(alpha = 0.9f)),
+        shadowElevation = 14.dp
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFEF4444).copy(alpha = 0.25f))
+                            .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.7f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFFCA5A5),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "Stream Interrupted (${String.format(Locale.US, "%.1f", interruptedSeconds)}s)",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = Color(0xFFFCA5A5)
+                        )
+                        Text(
+                            text = "No new frames detected in ${String.format(Locale.US, "%.1f", interruptedSeconds)}s",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.LightGray
+                        )
+                    }
+                }
+
+                if (streamRemainingSeconds != null) {
+                    Surface(
+                        color = Color(0xFF7F1D1D).copy(alpha = 0.8f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFEF4444))
+                    ) {
+                        Text(
+                            text = "Reset in ${streamRemainingSeconds}s",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color(0xFFFCA5A5),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Transfer for \"${scanProgress.fileName}\" paused at ${scanProgress.receivedCount}/${scanProgress.totalChunks} frames (${(scanProgress.progressFraction * 100).toInt()}%). Re-align the QR code with the reticle, or restart the sequence.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onOpenSettings,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = CyberCyanBright
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Settings",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CyberCyanBright
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Button(
+                    onClick = onRestartSequence,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("restart_stream_sequence_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Replay,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Restart Sequence",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = Color.White
                     )
@@ -1765,6 +2190,7 @@ fun StreamTimeoutSettingsDialog(
     onDismiss: () -> Unit
 ) {
     val timeoutOptions = listOf(
+        Pair(5, "5s (Ultra Fast / Strict)"),
         Pair(10, "10s (Fast / High FPS)"),
         Pair(15, "15s (Recommended)"),
         Pair(30, "30s (Large Payloads)"),

@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -76,6 +77,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -418,42 +421,69 @@ fun AnimatedQrStreamGenerator(
                     }
                 }
 
-                // Bottom HUD Overlay: Stream Loop Progress Bar
+                // Bottom HUD Overlay: Stream Loop Progress Bar & Frame Indicator
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = colorScheme.title,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = Color.LightGray
-                        )
-                        Text(
-                            text = "${(progressFraction * 100).toInt()}%",
+                            text = "Frame ${safeIndex + 1}/$totalChunks • Loop #$loopCount",
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
                             ),
-                            color = CyberCyanBright
+                            color = Color.White
                         )
+                        Surface(
+                            color = CyberCyan.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.6.dp, CyberCyanBright.copy(alpha = 0.7f))
+                        ) {
+                            Text(
+                                text = "${((safeIndex + 1).toFloat() / totalChunks.coerceAtLeast(1) * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp
+                                ),
+                                color = CyberCyanBright,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.height(3.dp))
-                    LinearProgressIndicator(
-                        progress = { progressFraction },
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp)),
-                        color = CyberEmeraldBright,
-                        trackColor = Color.DarkGray.copy(alpha = 0.6f),
-                    )
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(2.5.dp))
+                            .background(Color(0xFF0F172A))
+                    ) {
+                        Canvas(modifier = Modifier.matchParentSize()) {
+                            val w = size.width
+                            val h = size.height
+                            val progressW = (w * progressFraction).coerceAtMost(w)
+                            if (progressW > 0f) {
+                                drawRoundRect(
+                                    brush = Brush.horizontalGradient(
+                                        listOf(CyberCyanBright, CyberEmeraldBright),
+                                        0f,
+                                        progressW
+                                    ),
+                                    size = Size(progressW, h),
+                                    cornerRadius = CornerRadius(h / 2, h / 2)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1045,15 +1075,66 @@ fun AnimatedQrStreamGenerator(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        LinearProgressIndicator(
-                            progress = { progressFraction },
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Frame ${safeIndex + 1} of $totalChunks",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = Color.White
+                            )
+
+                            Surface(
+                                color = CyberEmerald.copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CyberEmeraldBright)
+                            ) {
+                                Text(
+                                    text = "${((safeIndex + 1).toFloat() / totalChunks.coerceAtLeast(1) * 100).toInt()}%",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Black,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 13.sp
+                                    ),
+                                    color = CyberEmeraldBright,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = CyberEmeraldBright,
-                            trackColor = Color.DarkGray
-                        )
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF0F172A))
+                                .border(0.8.dp, CyberCyan.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                        ) {
+                            Canvas(modifier = Modifier.matchParentSize()) {
+                                val w = size.width
+                                val h = size.height
+                                val progressW = (w * progressFraction).coerceAtMost(w)
+                                if (progressW > 0f) {
+                                    drawRoundRect(
+                                        brush = Brush.horizontalGradient(
+                                            listOf(CyberCyanBright, CyberEmeraldBright),
+                                            0f,
+                                            progressW
+                                        ),
+                                        size = Size(progressW, h),
+                                        cornerRadius = CornerRadius(h / 2, h / 2)
+                                    )
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
