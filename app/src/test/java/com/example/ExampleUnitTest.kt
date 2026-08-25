@@ -630,5 +630,73 @@ class ExampleUnitTest {
         val matrix2 = com.example.qr.QrCodeGenerator.generateBitMatrix(sampleChunk)
         assertEquals(matrix1, matrix2)
     }
+
+    @Test
+    fun test_qr_stream_reassembler_out_of_order_and_duplicates() {
+        val originalText = "Encrypted Mission Payload: Target Coordinates Alpha 7729-Beta-Gamma"
+        val originalBytes = originalText.toByteArray(Charsets.UTF_8)
+        val key = "MissionSecretKey2026!"
+        val encrypted = CryptoManager.encryptData(originalBytes, key)
+
+        val chunks = CryptoManager.createQrChunks(
+            encryptedBytes = encrypted.envelopeBytes,
+            fileName = "mission.dat",
+            mimeType = "application/octet-stream",
+            originalSize = originalBytes.size.toLong(),
+            originalSha256 = encrypted.sha256Original,
+            transferId = "TID_REASSEMBLE_TEST",
+            targetChunkSizeBytes = 40
+        )
+
+        assertTrue(chunks.size >= 3)
+
+        val reassembler = com.example.qr.QrStreamReassembler()
+        assertEquals(com.example.qr.StreamReassemblyState.Idle, reassembler.state.value)
+
+        // Feed chunks out-of-order: last chunk first, then middle, then duplicates, then first
+        val indicesOrder = listOf(chunks.size - 1, 1, 1 /* duplicate */, 0)
+        for (idx in indicesOrder) {
+            val res = reassembler.processScannedQr(chunks[idx])
+            if (idx == 1 && reassembler.chunkProgress.value?.duplicateCount ?: 0 > 0 && res is com.example.qr.ChunkProcessResult.DuplicateChunk) {
+                assertEquals(1, res.index)
+            }
+        }
+
+        // Feed remaining chunks to complete
+        for (i in 0 until chunks.size) {
+            reassembler.processScannedQr(chunks[i])
+        }
+
+        assertTrue(reassembler.isComplete())
+        val completeState = reassembler.state.value
+        assertTrue(completeState is com.example.qr.StreamReassemblyState.Complete)
+
+        val assembledBytes = (completeState as com.example.qr.StreamReassemblyState.Complete).assembledPayload
+        assertArrayEquals(encrypted.envelopeBytes, assembledBytes)
+
+        val decrypted = CryptoManager.decryptData(assembledBytes, key)
+        assertEquals(originalText, String(decrypted, Charsets.UTF_8))
+    }
+
+    @Test
+    fun test_qr_stream_reassembler_corrupted_frame_handling() {
+        val reassembler = com.example.qr.QrStreamReassembler()
+
+        // 1. Invalid non-stream QR
+        val nonStreamRes = reassembler.processScannedQr("https://example.com/not-a-stream")
+        assertTrue(nonStreamRes is com.example.qr.ChunkProcessResult.InvalidFormat)
+
+        // 2. Corrupted JSON structure
+        val corruptedJsonRes = reassembler.processScannedQr("CPQR1:{invalid_json}")
+        assertTrue(corruptedJsonRes is com.example.qr.ChunkProcessResult.CorruptedChunk)
+
+        // 3. Corrupted SHA-256 chunk checksum
+        val validPayload = android.util.Base64.encodeToString(ByteArray(32) { 0x01 }, android.util.Base64.NO_WRAP)
+        val badChecksumChunk = "CPQR1:{\"v\":1,\"tid\":\"TID_BAD\",\"idx\":0,\"tot\":2,\"fn\":\"test.bin\",\"mime\":\"text/plain\",\"osz\":100,\"data\":\"$validPayload\",\"osha\":\"fake_osha\",\"csha\":\"bad_chunk_sha\"}"
+        val checksumMismatchRes = reassembler.processScannedQr(badChecksumChunk)
+        assertTrue(checksumMismatchRes is com.example.qr.ChunkProcessResult.CorruptedChunk)
+        assertEquals(1, reassembler.chunkProgress.value?.corruptedCount)
+    }
 }
+
 

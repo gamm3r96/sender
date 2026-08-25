@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.view.View
 import android.view.ViewGroup
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -901,6 +903,16 @@ fun InViewBrowserWindow(
     var canGoForward by remember { mutableStateOf(false) }
     var hasError by remember { mutableStateOf(false) }
 
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            try {
+                webViewInstance?.stopLoading()
+                webViewInstance?.destroy()
+                webViewInstance = null
+            } catch (_: Exception) {}
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1045,6 +1057,9 @@ fun InViewBrowserWindow(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
+                        // Use software rendering to avoid Mesa GPU rendernode crashes in emulator containers
+                        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
@@ -1078,6 +1093,20 @@ fun InViewBrowserWindow(
                                     isLoading = false
                                 }
                             }
+
+                            override fun onRenderProcessGone(
+                                view: WebView?,
+                                detail: RenderProcessGoneDetail?
+                            ): Boolean {
+                                hasError = true
+                                isLoading = false
+                                try {
+                                    (view?.parent as? ViewGroup)?.removeView(view)
+                                    view?.destroy()
+                                } catch (_: Exception) {}
+                                webViewInstance = null
+                                return true // Return true so host app does NOT terminate
+                            }
                         }
 
                         webChromeClient = object : WebChromeClient() {
@@ -1089,7 +1118,12 @@ fun InViewBrowserWindow(
                             }
                         }
 
-                        loadUrl(url)
+                        try {
+                            loadUrl(url)
+                        } catch (e: Exception) {
+                            hasError = true
+                            isLoading = false
+                        }
                         webViewInstance = this
                     }
                 },

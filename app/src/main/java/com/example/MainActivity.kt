@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -62,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.auth.BiometricAuthManager
 import com.example.data.TransferRecord
 import com.example.p2p.NetworkUtils
+import com.example.ui.components.NetworkStatusBar
 import com.example.ui.components.P2PDiagnosticDashboardDialog
 import com.example.ui.components.ThemeToggleIconButton
 import com.example.ui.components.TransferSuccessCelebrationDialog
@@ -99,11 +102,24 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleIncomingIntent(intent)
         setContent {
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             MyApplicationTheme(themeMode = themeMode) {
                 CipherApp(viewModel = viewModel)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent != null) {
+            viewModel.handleIncomingShareIntent(this, intent)
         }
     }
 }
@@ -167,6 +183,16 @@ fun CipherApp(viewModel: CipherViewModel) {
     val batteryInfo by viewModel.batteryInfo.collectAsStateWithLifecycle()
     val isBatterySaverEnabled by viewModel.isBatterySaverEnabled.collectAsStateWithLifecycle()
     val batterySaverTargetFps by viewModel.batterySaverTargetFps.collectAsStateWithLifecycle()
+
+    LaunchedEffect(sendState) {
+        if (sendState != null && currentDestination != AppDestination.SEND) {
+            currentDestination = AppDestination.SEND
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshStorageMetrics(context)
+    }
 
     fun triggerBiometricAuth() {
         biometricErrorMessage = null
@@ -378,13 +404,24 @@ fun CipherApp(viewModel: CipherViewModel) {
                 }
             }
         ) { innerPadding ->
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                when (currentDestination) {
+                NetworkStatusBar(
+                    networkInfo = networkInfo,
+                    onOpenDiagnostics = { viewModel.openDiagnosticsDialog() },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    when (currentDestination) {
                     AppDestination.DASHBOARD -> {
                         DashboardScreen(
                             transfers = transfers,
@@ -636,5 +673,6 @@ fun CipherApp(viewModel: CipherViewModel) {
             }
         }
     }
+}
 }
 

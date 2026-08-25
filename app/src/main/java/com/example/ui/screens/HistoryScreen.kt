@@ -922,7 +922,7 @@ fun HistoryScreen(
 
             // Tag & Category Filter Pills Row
             TagFilterRow(
-                availableTags = availableTags,
+                allTags = availableTags,
                 selectedTag = selectedTagFilter,
                 onSelectTag = { tag ->
                     selectedTagFilter = tag

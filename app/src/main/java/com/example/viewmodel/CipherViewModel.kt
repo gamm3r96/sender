@@ -2,6 +2,7 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -67,6 +69,15 @@ data class StreamTimeoutNotice(
     val totalChunks: Int,
     val timeoutSeconds: Int,
     val timestamp: Long = System.currentTimeMillis()
+)
+
+data class StorageBreakdownState(
+    val vaultFilesBytes: Long = 0L,
+    val tempCacheBytes: Long = 0L,
+    val totalHistoryCount: Int = 0,
+    val formattedVaultSize: String = "0 B",
+    val formattedCacheSize: String = "0 B",
+    val formattedTotalSize: String = "0 B"
 )
 
 data class SendPreparationState(
@@ -91,6 +102,9 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
     private val database = AppDatabase.getDatabase(application)
     val transferRepository = TransferRepository(database.transferDao())
     val teamKeyRepository = TeamKeyRepository(database.teamKeyDao())
+
+    private val _storageBreakdown = MutableStateFlow(StorageBreakdownState())
+    val storageBreakdown: StateFlow<StorageBreakdownState> = _storageBreakdown.asStateFlow()
 
     val transfers: StateFlow<List<TransferRecord>> = transferRepository.allTransfers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -739,6 +753,62 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         val fileName = if (title.isBlank()) "secret_note.txt" else "${title.trim()}.txt"
         val bytes = secretText.toByteArray(Charsets.UTF_8)
         processPayloadForSending(fileName, "text/plain", bytes, mode, customPassphrase, tags)
+    }
+
+    /**
+     * Handles incoming intent from Android system share sheet (ACTION_SEND or ACTION_SEND_MULTIPLE).
+     * Automatically prepares the payload for immediate zero-trust encryption and transmission.
+     */
+    fun handleIncomingShareIntent(context: Context, intent: Intent): Boolean {
+        val action = intent.action ?: return false
+        try {
+            when (action) {
+                Intent.ACTION_SEND -> {
+                    if (intent.hasExtra(Intent.EXTRA_STREAM)) {
+                        val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+                        }
+                        if (uri != null) {
+                            prepareFileForSending(context, uri, TransferMode.QR_STREAM)
+                            viewModelScope.launch {
+                                _toastEvent.emit("Incoming file prepared for encrypted transfer")
+                            }
+                            return true
+                        }
+                    } else if (intent.hasExtra(Intent.EXTRA_TEXT)) {
+                        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                        if (!sharedText.isNullOrBlank()) {
+                            val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT) ?: "Shared Secret"
+                            prepareSecretTextForSending(subject, sharedText, TransferMode.QR_STREAM)
+                            viewModelScope.launch {
+                                _toastEvent.emit("Incoming text loaded for encrypted transfer")
+                            }
+                            return true
+                        }
+                    }
+                }
+                Intent.ACTION_SEND_MULTIPLE -> {
+                    val uris = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                    }
+                    val firstUri = uris?.firstOrNull()
+                    if (firstUri != null) {
+                        prepareFileForSending(context, firstUri, TransferMode.QR_STREAM)
+                        viewModelScope.launch {
+                            _toastEvent.emit("Incoming file prepared for encrypted transfer")
+                        }
+                        return true
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return false
     }
 
     private fun processPayloadForSending(
@@ -1632,10 +1702,91 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch(Dispatchers.IO) {
             QrCodeGenerator.clearCache()
             val success = FileUtils.clearTemporaryCache(context)
+            refreshStorageMetrics(context)
             if (success) {
                 _toastEvent.emit("Temporary cache cleared")
             } else {
                 _toastEvent.emit("Cache cleanup completed")
+            }
+        }
+    }
+
+    fun refreshStorageMetrics(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val vaultSize = FileUtils.getVaultCacheSize(context)
+            val cacheSize = try {
+                var size = 0L
+                context.cacheDir.listFiles()?.forEach { size += it.length() }
+                size
+            } catch (_: Exception) { 0L }
+            val count = transfers.value.size
+            val total = vaultSize + cacheSize
+            _storageBreakdown.value = StorageBreakdownState(
+                vaultFilesBytes = vaultSize,
+                tempCacheBytes = cacheSize,
+                totalHistoryCount = count,
+                formattedVaultSize = FileUtils.formatBytes(vaultSize),
+                formattedCacheSize = FileUtils.formatBytes(cacheSize),
+                formattedTotalSize = FileUtils.formatBytes(total)
+            )
+        }
+    }
+
+    fun importHistoryFromJson(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return@launch
+                val jsonString = inputStream.bufferedReader().use { it.readText() }
+                val root = org.json.JSONObject(jsonString)
+                val recordsArray = root.getJSONArray("records")
+                var importedCount = 0
+                for (i in 0 until recordsArray.length()) {
+                    val obj = recordsArray.getJSONObject(i)
+                    val transferId = obj.optString("transferId", UUID.randomUUID().toString().substring(0, 8))
+                    val fileName = obj.optString("fileName", "imported_file")
+                    val isReceived = obj.optBoolean("isReceived", true)
+                    val statusStr = obj.optString("status", "COMPLETED")
+                    val status = try { TransferStatus.valueOf(statusStr) } catch (_: Exception) { TransferStatus.COMPLETED }
+                    val tags = obj.optString("tags", "Backup")
+                    val teamName = obj.optString("teamName", "Imported Vault")
+                    val modeStr = obj.optString("transferMode", "QR_STREAM")
+                    val mode = try { TransferMode.valueOf(modeStr) } catch (_: Exception) { TransferMode.QR_STREAM }
+                    val originalSize = obj.optLong("originalSizeBytes", 0L)
+                    val encryptedSize = obj.optLong("encryptedSizeBytes", 0L)
+                    val timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                    val sha256 = obj.optString("sha256Checksum", "")
+                    val safetyNumber = obj.optString("safetyNumber", "")
+                    val preview = if (obj.has("decryptedTextPreview")) obj.getString("decryptedTextPreview") else null
+
+                    val mimeType = obj.optString("mimeType", "application/octet-stream")
+
+                    val record = TransferRecord(
+                        transferId = transferId,
+                        fileName = fileName,
+                        mimeType = mimeType,
+                        isReceived = isReceived,
+                        status = status,
+                        tags = tags,
+                        teamName = teamName,
+                        transferMode = mode,
+                        originalSize = originalSize,
+                        encryptedSize = encryptedSize,
+                        timestamp = timestamp,
+                        sha256Checksum = sha256,
+                        safetyNumber = safetyNumber,
+                        decryptedTextPreview = preview
+                    )
+                    transferRepository.insert(record)
+                    importedCount++
+                }
+                refreshStorageMetrics(context)
+                withContext(Dispatchers.Main) {
+                    _toastEvent.emit("Successfully imported $importedCount records from backup")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    _toastEvent.emit("Failed to import backup: ${e.localizedMessage}")
+                }
             }
         }
     }
