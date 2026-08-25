@@ -107,6 +107,7 @@ import com.example.p2p.NetworkInfoState
 import com.example.ui.components.AnimatedPulseBadge
 import com.example.ui.components.AnimatedQrStreamGenerator
 import com.example.ui.components.CyberSecurityBadge
+import com.example.ui.components.EncryptedDataQrSender
 import com.example.ui.components.FilePreviewCard
 import com.example.ui.components.QrCodeView
 import com.example.ui.components.SafetyNumberBox
@@ -766,38 +767,54 @@ fun SendScreen(
             }
 
             if (sendState.mode == TransferMode.QR_STREAM) {
-                // HIGH CAPACITY ANIMATED QR STREAM GENERATOR
-                item {
-                    AnimatedQrStreamGenerator(
-                        chunks = sendState.qrChunks,
-                        currentChunkIndex = currentChunkIndex,
-                        isPlaying = isStreamPlaying,
-                        streamFps = streamFps,
-                        densityPreset = densityPreset,
-                        loopCount = loopCount,
-                        fileName = sendState.fileName,
-                        originalSizeBytes = sendState.originalSize,
-                        encryptedSizeBytes = sendState.encryptedPayload?.envelopeBytes?.size?.toLong() ?: 0L,
-                        colorScheme = colorScheme,
-                        errorCorrectionLevel = errorCorrectionLevel,
-                        moduleShape = moduleShape,
-                        isQrInverted = isQrInverted,
-                        batteryInfo = batteryInfo,
-                        isBatterySaverEnabled = isBatterySaverEnabled,
-                        effectiveFps = effectiveFps,
-                        onTogglePlay = onTogglePlay,
-                        onSelectChunk = onSelectChunk,
-                        onNextChunk = onNextChunk,
-                        onPrevChunk = onPrevChunk,
-                        onJumpFirst = onJumpFirst,
-                        onJumpLast = onJumpLast,
-                        onSetFps = onSetStreamFps,
-                        onSetDensityPreset = onSetDensityPreset,
-                        onSetColorScheme = onSetColorScheme,
-                        onSetErrorCorrectionLevel = onSetErrorCorrectionLevel,
-                        onSetModuleShape = onSetModuleShape,
-                        onToggleInverted = onToggleInverted
-                    )
+                if (sendState.qrChunks.size <= 1) {
+                    // STANDALONE ENCRYPTED DATA QR SENDER
+                    item {
+                        EncryptedDataQrSender(
+                            encryptedData = sendState.qrChunks.firstOrNull() ?: "",
+                            title = sendState.fileName,
+                            metadata = "Size: ${FileUtils.formatBytes(sendState.originalSize)}",
+                            safetyNumber = null,
+                            initialColorScheme = colorScheme,
+                            initialModuleShape = moduleShape,
+                            initialErrorCorrection = errorCorrectionLevel,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } else {
+                    // HIGH CAPACITY ANIMATED QR STREAM GENERATOR FOR MULTI-CHUNK TRANSFERS
+                    item {
+                        AnimatedQrStreamGenerator(
+                            chunks = sendState.qrChunks,
+                            currentChunkIndex = currentChunkIndex,
+                            isPlaying = isStreamPlaying,
+                            streamFps = streamFps,
+                            densityPreset = densityPreset,
+                            loopCount = loopCount,
+                            fileName = sendState.fileName,
+                            originalSizeBytes = sendState.originalSize,
+                            encryptedSizeBytes = sendState.encryptedPayload?.envelopeBytes?.size?.toLong() ?: 0L,
+                            colorScheme = colorScheme,
+                            errorCorrectionLevel = errorCorrectionLevel,
+                            moduleShape = moduleShape,
+                            isQrInverted = isQrInverted,
+                            batteryInfo = batteryInfo,
+                            isBatterySaverEnabled = isBatterySaverEnabled,
+                            effectiveFps = effectiveFps,
+                            onTogglePlay = onTogglePlay,
+                            onSelectChunk = onSelectChunk,
+                            onNextChunk = onNextChunk,
+                            onPrevChunk = onPrevChunk,
+                            onJumpFirst = onJumpFirst,
+                            onJumpLast = onJumpLast,
+                            onSetFps = onSetStreamFps,
+                            onSetDensityPreset = onSetDensityPreset,
+                            onSetColorScheme = onSetColorScheme,
+                            onSetErrorCorrectionLevel = onSetErrorCorrectionLevel,
+                            onSetModuleShape = onSetModuleShape,
+                            onToggleInverted = onToggleInverted
+                        )
+                    }
                 }
             } else {
                 // P2P / WI-FI / HOTSPOT DIRECT TRANSFER HUB
