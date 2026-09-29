@@ -1,10 +1,12 @@
 package com.example
 
 import com.example.crypto.CryptoManager
+import com.example.crypto.QrChunkProgress
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -696,6 +698,55 @@ class ExampleUnitTest {
         val checksumMismatchRes = reassembler.processScannedQr(badChecksumChunk)
         assertTrue(checksumMismatchRes is com.example.qr.ChunkProcessResult.CorruptedChunk)
         assertEquals(1, reassembler.chunkProgress.value?.corruptedCount)
+    }
+
+    @Test
+    fun test_stream_decryption_confirmation_state_and_haptic() {
+        val testPayload = "Top Secret Reconnaissance Coordinates 45.123, -122.456"
+        val testBytes = testPayload.toByteArray(Charsets.UTF_8)
+        val teamKey = "TeamKeyOmega2026!"
+        val encrypted = CryptoManager.encryptData(testBytes, teamKey)
+
+        val progress = QrChunkProgress(
+            transferId = "TR_TEST_CONFIRM",
+            fileName = "intel_coords.txt",
+            mimeType = "text/plain",
+            originalSize = testBytes.size.toLong(),
+            originalSha256 = encrypted.sha256Original,
+            totalChunks = 5,
+            firstChunkTimestamp = System.currentTimeMillis()
+        )
+
+        val pendingStateTeamMatch = com.example.viewmodel.PendingDecryptionState(
+            progress = progress,
+            assembledEnvelope = encrypted.envelopeBytes,
+            matchedTeamKey = teamKey,
+            matchedTeamName = "Alpha Squad",
+            isTeamKeyMatch = true
+        )
+
+        assertTrue(pendingStateTeamMatch.isTeamKeyMatch)
+        assertEquals("Alpha Squad", pendingStateTeamMatch.matchedTeamName)
+        assertEquals(teamKey, pendingStateTeamMatch.matchedTeamKey)
+        assertEquals("intel_coords.txt", pendingStateTeamMatch.progress.fileName)
+
+        // Decrypt using matched team key
+        val decrypted = CryptoManager.decryptData(pendingStateTeamMatch.assembledEnvelope, pendingStateTeamMatch.matchedTeamKey!!)
+        assertEquals(testPayload, String(decrypted, Charsets.UTF_8))
+
+        // Ad-hoc passphrase scenario
+        val pendingStateAdHoc = com.example.viewmodel.PendingDecryptionState(
+            progress = progress,
+            assembledEnvelope = encrypted.envelopeBytes,
+            matchedTeamKey = null,
+            matchedTeamName = null,
+            isTeamKeyMatch = false
+        )
+        assertFalse(pendingStateAdHoc.isTeamKeyMatch)
+        assertNull(pendingStateAdHoc.matchedTeamKey)
+
+        val customDecrypted = CryptoManager.decryptData(pendingStateAdHoc.assembledEnvelope, teamKey)
+        assertEquals(testPayload, String(customDecrypted, Charsets.UTF_8))
     }
 }
 

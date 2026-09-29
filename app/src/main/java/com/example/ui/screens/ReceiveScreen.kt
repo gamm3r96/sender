@@ -174,8 +174,10 @@ import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberCyanBright
 import com.example.ui.theme.CyberEmerald
 import com.example.ui.theme.CyberEmeraldBright
+import com.example.ui.theme.CyberEmeraldDark
 import com.example.ui.theme.CyberVioletBright
 import com.example.util.FileUtils
+import com.example.util.HapticFeedbackHelper
 import com.example.viewmodel.PendingDecryptionState
 import com.example.viewmodel.StreamTimeoutNotice
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -802,9 +804,9 @@ fun ReceiveScreen(
         )
     }
 
-    // Modal: Custom Passphrase Required for Decryption
+    // Modal: Confirmation Dialog with Vibration Feedback to Initiate Decryption
     if (pendingDecryption != null) {
-        CustomPassphraseDecryptionDialog(
+        StreamDecryptionConfirmationDialog(
             pending = pendingDecryption,
             onDecrypt = onDecryptPendingPassphrase,
             onDismiss = onDismissPendingDecryption
@@ -1594,68 +1596,81 @@ fun FrameAssemblyPanel(
 }
 
 /**
- * Modal Dialog for entering Custom Passphrase when decrypting assembled QR streams
+ * Confirmation dialog with vibration feedback that appears after successfully scanning
+ * a QR stream to review payload details and initiate decryption.
  */
 @Composable
-fun CustomPassphraseDecryptionDialog(
+fun StreamDecryptionConfirmationDialog(
     pending: PendingDecryptionState,
     onDecrypt: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var passphrase by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    var customPassphrase by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
+    var overrideWithCustomPassphrase by remember { mutableStateOf(!pending.isTeamKeyMatch) }
+
+    // Trigger distinctive tactile vibration feedback as soon as the confirmation dialog appears
+    LaunchedEffect(pending) {
+        HapticFeedbackHelper.vibrateStreamDecryptionPrompt(context)
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag("stream_decryption_confirmation_dialog")
                 .testTag("custom_passphrase_dialog"),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(22.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-            border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.6f))
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, CyberEmeraldBright.copy(alpha = 0.7f))
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier
+                    .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Header Badge with glowing outline
                 Box(
                     modifier = Modifier
-                        .size(54.dp)
+                        .size(56.dp)
                         .clip(CircleShape)
-                        .background(CyberCyan.copy(alpha = 0.2f)),
+                        .background(CyberEmeraldBright.copy(alpha = 0.15f))
+                        .border(1.dp, CyberEmeraldBright.copy(alpha = 0.4f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.VpnKey,
-                        contentDescription = null,
-                        tint = CyberCyanBright,
-                        modifier = Modifier.size(28.dp)
+                        imageVector = if (pending.isTeamKeyMatch) Icons.Default.Shield else Icons.Default.VpnKey,
+                        contentDescription = "Stream Verified",
+                        tint = CyberEmeraldBright,
+                        modifier = Modifier.size(30.dp)
                     )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Stream Assembled (100%)",
+                    text = "QR Stream Capture Complete",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White
+                    color = Color.White,
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "Enter the secret team passphrase used to encrypt '${pending.progress.fileName}'",
+                    text = "All ${pending.progress.totalChunks} chunks assembled • Ready to initiate decryption",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.LightGray,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // File Specifications Box
+                // Payload Specifications Card
                 Surface(
                     color = Color(0xFF1E293B),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     val detected = remember(pending.progress.fileName, pending.progress.mimeType) {
@@ -1665,94 +1680,229 @@ fun CustomPassphraseDecryptionDialog(
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("Payload:", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                            Text(pending.progress.fileName, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(
+                                    imageVector = detected.icon,
+                                    contentDescription = null,
+                                    tint = detected.primaryColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = pending.progress.fileName,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Type Preview:", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                            Text(detected.categoryName, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = detected.primaryColor)
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Assembled Size:", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                            Text(FileUtils.formatBytes(pending.assembledEnvelope.size.toLong()), style = MaterialTheme.typography.labelSmall, color = CyberEmeraldBright)
+                            Text(
+                                text = "${FileUtils.formatBytes(pending.assembledEnvelope.size.toLong())} (${pending.progress.totalChunks} chunks)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = CyberEmeraldBright
+                            )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Original SHA-256:", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                            Text(pending.progress.originalSha256.take(12) + "...", style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace), color = CyberCyanBright)
+                            Text(
+                                text = pending.progress.originalSha256.take(16) + "...",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = CyberCyanBright
+                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = { passphrase = it },
-                    label = { Text("Decryption Passphrase") },
-                    placeholder = { Text("Enter secret key or passphrase") },
-                    singleLine = true,
-                    visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                // Key Status / Passphrase Input
+                if (pending.isTeamKeyMatch && !overrideWithCustomPassphrase) {
+                    Surface(
+                        color = CyberEmeraldDark.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CyberEmeraldBright.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                             Icon(
-                                imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = "Toggle Passphrase Visibility",
-                                tint = Color.LightGray
+                                imageVector = Icons.Default.Key,
+                                contentDescription = null,
+                                tint = CyberEmeraldBright,
+                                modifier = Modifier.size(22.dp)
                             )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Matched Key: ${pending.matchedTeamName ?: "Team Vault"}",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Authenticated with team key. Tap initiate to decrypt.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.LightGray
+                                )
+                            }
                         }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("passphrase_input"),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = CyberCyan,
-                        unfocusedBorderColor = Color.DarkGray
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Use custom passphrase instead",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CyberCyanBright,
+                        modifier = Modifier
+                            .clickable { overrideWithCustomPassphrase = true }
+                            .padding(4.dp)
                     )
-                )
+                } else {
+                    OutlinedTextField(
+                        value = customPassphrase,
+                        onValueChange = { customPassphrase = it },
+                        label = { Text("Decryption Passphrase") },
+                        placeholder = { Text("Enter secret key or passphrase") },
+                        singleLine = true,
+                        visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Toggle Passphrase Visibility",
+                                    tint = Color.LightGray
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("passphrase_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyberCyan,
+                            unfocusedBorderColor = Color.DarkGray
+                        )
+                    )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                    if (pending.isTeamKeyMatch) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Switch back to matched team key",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CyberEmeraldBright,
+                            modifier = Modifier
+                                .clickable { overrideWithCustomPassphrase = false }
+                                .padding(4.dp)
+                        )
+                    }
+                }
 
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Haptic feedback indicator badge
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Vibration,
+                        contentDescription = null,
+                        tint = CyberCyanBright.copy(alpha = 0.8f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Vibration feedback active",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.LightGray.copy(alpha = 0.8f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            HapticFeedbackHelper.vibrateButtonTap(context)
+                            onDismiss()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("cancel_stream_decryption_btn"),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text("Cancel", color = Color.LightGray)
                     }
 
+                    val canDecrypt = if (pending.isTeamKeyMatch && !overrideWithCustomPassphrase) {
+                        true
+                    } else {
+                        customPassphrase.isNotBlank()
+                    }
+
                     Button(
-                        onClick = { onDecrypt(passphrase) },
+                        onClick = {
+                            HapticFeedbackHelper.vibrateButtonTap(context)
+                            val passToPass = if (overrideWithCustomPassphrase) customPassphrase.trim() else ""
+                            onDecrypt(passToPass)
+                        },
                         modifier = Modifier
                             .weight(1f)
+                            .testTag("initiate_decryption_btn")
                             .testTag("submit_decrypt_passphrase_btn"),
                         shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyanBright),
-                        enabled = passphrase.isNotBlank()
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (pending.isTeamKeyMatch && !overrideWithCustomPassphrase) CyberEmeraldBright else CyberCyanBright
+                        ),
+                        enabled = canDecrypt
                     ) {
-                        Text("Decrypt", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Initiate Decrypt",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * Backward compatibility alias for CustomPassphraseDecryptionDialog
+ */
+@Composable
+fun CustomPassphraseDecryptionDialog(
+    pending: PendingDecryptionState,
+    onDecrypt: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    StreamDecryptionConfirmationDialog(
+        pending = pending,
+        onDecrypt = onDecrypt,
+        onDismiss = onDismiss
+    )
 }
 
 /**

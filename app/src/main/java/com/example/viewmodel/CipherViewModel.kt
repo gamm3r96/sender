@@ -60,7 +60,10 @@ import java.util.UUID
 
 data class PendingDecryptionState(
     val progress: QrChunkProgress,
-    val assembledEnvelope: ByteArray
+    val assembledEnvelope: ByteArray,
+    val matchedTeamKey: String? = null,
+    val matchedTeamName: String? = null,
+    val isTeamKeyMatch: Boolean = false
 )
 
 data class StreamTimeoutNotice(
@@ -1151,91 +1154,87 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
         context: Context
     ) {
         withContext(Dispatchers.IO) {
-            // Try decrypting with active team key or all available team keys
-            val keyList = mutableListOf<String>()
-            _activeTeamKey.value?.let { keyList.add(it.passphraseOrKey) }
-            val allKeys = teamKeyRepository.getDefaultTeamKey()
-            allKeys?.let { if (!keyList.contains(it.passphraseOrKey)) keyList.add(it.passphraseOrKey) }
-
-            // Add all other team keys
-            val allTeamKeys = teamKeys.value
-            for (tk in allTeamKeys) {
-                if (!keyList.contains(tk.passphraseOrKey)) {
-                    keyList.add(tk.passphraseOrKey)
+            // Check if active team key or any saved team keys match the assembled envelope
+            val keyList = mutableListOf<Pair<String, String>>()
+            _activeTeamKey.value?.let { keyList.add(it.passphraseOrKey to (it.teamName ?: "Active Team Key")) }
+            val defaultKey = teamKeyRepository.getDefaultTeamKey()
+            defaultKey?.let { dk ->
+                if (keyList.none { it.first == dk.passphraseOrKey }) {
+                    keyList.add(dk.passphraseOrKey to (dk.teamName ?: "Default Team Key"))
                 }
             }
 
-            var decryptedBytes: ByteArray? = null
-            var matchedKey: String? = null
+            val allTeamKeys = teamKeys.value
+            for (tk in allTeamKeys) {
+                if (keyList.none { it.first == tk.passphraseOrKey }) {
+                    keyList.add(tk.passphraseOrKey to (tk.teamName ?: "Team Key"))
+                }
+            }
 
-            for (k in keyList) {
+            var matchedKey: String? = null
+            var matchedTeamName: String? = null
+
+            for ((k, name) in keyList) {
                 try {
-                    decryptedBytes = CryptoManager.decryptData(assembledEnvelope, k)
-                    matchedKey = k
-                    break
+                    val decrypted = CryptoManager.decryptData(assembledEnvelope, k)
+                    if (decrypted.isNotEmpty()) {
+                        matchedKey = k
+                        matchedTeamName = name
+                        break
+                    }
                 } catch (_: Exception) {}
             }
 
-            if (decryptedBytes != null) {
-                val computedOriginalSha = CryptoManager.computeSha256(decryptedBytes)
-                if (computedOriginalSha != progress.originalSha256) {
-                    _toastEvent.emit("Warning: Decrypted data SHA-256 mismatch!")
-                }
+            val pending = PendingDecryptionState(
+                progress = progress,
+                assembledEnvelope = assembledEnvelope,
+                matchedTeamKey = matchedKey,
+                matchedTeamName = matchedTeamName,
+                isTeamKeyMatch = (matchedKey != null)
+            )
 
-                val savedFile = FileUtils.saveBytesToInternalStorage(context, progress.fileName, decryptedBytes)
-                val safetyNum = CryptoManager.generateSafetyNumber(progress.originalSha256, matchedKey ?: "")
-                val textPreview = if (progress.mimeType.startsWith("text/")) String(decryptedBytes, Charsets.UTF_8).take(200) else null
-
-                val record = TransferRecord(
-                    transferId = progress.transferId,
-                    fileName = progress.fileName,
-                    mimeType = progress.mimeType,
-                    originalSize = progress.originalSize,
-                    encryptedSize = assembledEnvelope.size.toLong(),
-                    isReceived = true,
-                    transferMode = TransferMode.QR_STREAM,
-                    sourceInfo = "Optical QR Stream Broadcast",
-                    destinationInfo = "Local Storage Vault (${_activeTeamKey.value?.teamName ?: "Team Vault"})",
-                    teamMemberName = "Team Peer",
-                    teamName = _activeTeamKey.value?.teamName ?: "Team Vault",
-                    timestamp = System.currentTimeMillis(),
-                    status = TransferStatus.COMPLETED,
-                    sha256Checksum = progress.originalSha256,
-                    safetyNumber = safetyNum,
-                    localFilePath = savedFile.absolutePath,
-                    decryptedTextPreview = textPreview
-                )
-
-                val id = transferRepository.insert(record)
-                val savedRecord = record.copy(id = id)
-                _inspectedRecord.value = savedRecord
-                _celebrationRecord.value = savedRecord
-                _scanProgress.value = null
-                _pendingDecryption.value = null
-                HapticFeedbackHelper.vibrateDecryptionSuccess(context)
-                _toastEvent.emit("Successfully assembled & decrypted ${progress.fileName}!")
-            } else {
-                // Prompt user for custom passphrase
-                _pendingDecryption.value = PendingDecryptionState(progress, assembledEnvelope)
-                HapticFeedbackHelper.vibrateStreamCompleted(context)
-                _toastEvent.emit("All ${progress.totalChunks} chunks assembled! Enter passphrase to decrypt.")
+            withContext(Dispatchers.Main) {
+                _pendingDecryption.value = pending
+                // Trigger tactile vibration feedback upon successfully scanning and reassembling stream
+                HapticFeedbackHelper.vibrateStreamDecryptionPrompt(context)
+                _toastEvent.emit("QR Stream '${progress.fileName}' scanned (100%)! Ready to decrypt.")
             }
         }
     }
 
     fun decryptPendingWithPassphrase(passphrase: String, context: Context) {
         val pending = _pendingDecryption.value ?: return
+        val keyToUse = if (passphrase.isNotBlank()) {
+            passphrase.trim()
+        } else {
+            pending.matchedTeamKey ?: ""
+        }
+
+        if (keyToUse.isBlank()) {
+            HapticFeedbackHelper.vibratePassphraseError(context)
+            viewModelScope.launch {
+                _toastEvent.emit("Passphrase cannot be empty")
+            }
+            return
+        }
+
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val decryptedBytes = CryptoManager.decryptData(pending.assembledEnvelope, passphrase.trim())
+                val decryptedBytes = CryptoManager.decryptData(pending.assembledEnvelope, keyToUse)
                 val computedOriginalSha = CryptoManager.computeSha256(decryptedBytes)
                 if (computedOriginalSha != pending.progress.originalSha256) {
                     _toastEvent.emit("Warning: Decrypted data SHA-256 mismatch!")
                 }
 
                 val savedFile = FileUtils.saveBytesToInternalStorage(context, pending.progress.fileName, decryptedBytes)
-                val safetyNum = CryptoManager.generateSafetyNumber(pending.progress.originalSha256, passphrase.trim())
+                val safetyNum = CryptoManager.generateSafetyNumber(pending.progress.originalSha256, keyToUse)
                 val textPreview = if (pending.progress.mimeType.startsWith("text/")) String(decryptedBytes, Charsets.UTF_8).take(200) else null
+
+                val teamNameUsed = if (pending.isTeamKeyMatch && passphrase.isBlank()) {
+                    pending.matchedTeamName ?: (_activeTeamKey.value?.teamName ?: "Team Vault")
+                } else {
+                    "Custom Passphrase"
+                }
 
                 val record = TransferRecord(
                     transferId = pending.progress.transferId,
@@ -1246,9 +1245,9 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
                     isReceived = true,
                     transferMode = TransferMode.QR_STREAM,
                     sourceInfo = "Optical QR Stream Broadcast",
-                    destinationInfo = "Local Storage Vault (Ad-hoc Passphrase)",
-                    teamMemberName = "Ad-hoc Peer",
-                    teamName = "Custom Passphrase",
+                    destinationInfo = "Local Storage Vault ($teamNameUsed)",
+                    teamMemberName = "Team Peer",
+                    teamName = teamNameUsed,
                     timestamp = System.currentTimeMillis(),
                     status = TransferStatus.COMPLETED,
                     sha256Checksum = pending.progress.originalSha256,
@@ -1259,21 +1258,27 @@ class CipherViewModel(application: Application) : AndroidViewModel(application) 
 
                 val id = transferRepository.insert(record)
                 val savedRecord = record.copy(id = id)
-                _inspectedRecord.value = savedRecord
-                _celebrationRecord.value = savedRecord
-                _scanProgress.value = null
-                _pendingDecryption.value = null
-                HapticFeedbackHelper.vibrateDecryptionSuccess(context)
-                _toastEvent.emit("Decryption successful: ${pending.progress.fileName}")
+                withContext(Dispatchers.Main) {
+                    _inspectedRecord.value = savedRecord
+                    _celebrationRecord.value = savedRecord
+                    _scanProgress.value = null
+                    _pendingDecryption.value = null
+                    HapticFeedbackHelper.vibrateDecryptionSuccess(context)
+                    _toastEvent.emit("Successfully decrypted: ${pending.progress.fileName}")
+                }
             } catch (e: Exception) {
-                HapticFeedbackHelper.vibratePassphraseError(context)
-                _toastEvent.emit("Decryption failed: Invalid passphrase or corrupted key.")
+                withContext(Dispatchers.Main) {
+                    HapticFeedbackHelper.vibratePassphraseError(context)
+                    _toastEvent.emit("Decryption failed: Invalid passphrase or corrupted key.")
+                }
             }
         }
     }
 
     fun dismissPendingDecryption() {
         _pendingDecryption.value = null
+        _scanProgress.value = null
+        cancelStreamTimeoutTimer()
     }
 
     fun refreshNetworkInfo(context: Context? = null) {

@@ -83,6 +83,31 @@ object HapticFeedbackHelper {
     }
 
     /**
+     * Distinctive multi-pulse tactile feedback sequence when stream reassembly finishes
+     * and the confirmation dialog is presented to initiate decryption.
+     */
+    fun vibrateStreamDecryptionPrompt(context: Context) {
+        if (!isHapticEnabled(context)) return
+        try {
+            val vibrator = getVibrator(context) ?: return
+            if (!vibrator.hasVibrator()) return
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Signature prompt pattern: [wait 0ms, buzz 80ms, pause 60ms, buzz 140ms]
+                val timings = longArrayOf(0, 80, 60, 140)
+                val amplitudes = intArrayOf(0, 210, 0, 255)
+                val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
+                vibrator.vibrate(effect)
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(longArrayOf(0, 80, 60, 140), -1)
+            }
+        } catch (_: Exception) {
+            vibrateStreamCompleted(context)
+        }
+    }
+
+    /**
      * Ascending triumphant tactile pulse on successful cryptographic decryption.
      */
     fun vibrateDecryptionSuccess(context: Context) {
